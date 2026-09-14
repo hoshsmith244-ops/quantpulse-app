@@ -1,6 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
+import {
+  clientKey,
+  corsHeaders,
+  methodNotAllowed,
+  preflight,
+  rateLimit,
+  rateLimitResponse,
+} from "@/lib/http";
+
 /**
  * Working webhook receiver. Mirrors the contract documented in the dashboard:
  * validate the key, optionally verify an HMAC signature over the raw body,
@@ -12,6 +21,11 @@ import { NextResponse } from "next/server";
 const VALID_KEY_PREFIX = "wh_live_";
 const SIGNING_SECRET = process.env.QP_WEBHOOK_SECRET ?? "";
 const DEDUPE_WINDOW_MS = 60_000;
+const METHODS = ["POST", "GET", "OPTIONS"];
+
+export const dynamic = "force-dynamic";
+/** Vercel reads this from the Next.js build output to size the function timeout. */
+export const maxDuration = 15;
 
 /** alert_id -> first-seen timestamp. In-memory, so it resets on redeploy. */
 const seen = new Map<string, number>();
@@ -55,11 +69,16 @@ export async function POST(
 ) {
   const started = Date.now();
   const { key } = await params;
+  const cors = corsHeaders(request, METHODS);
+
+  // Signals are bursty but bounded; this catches runaway alert loops.
+  const limit = rateLimit(clientKey(request, "webhook"), 120, 60_000);
+  if (!limit.ok) return rateLimitResponse(limit.resetAt);
 
   if (!key.startsWith(VALID_KEY_PREFIX)) {
     return NextResponse.json(
       { error: "unknown_endpoint", message: "No endpoint matches that key." },
-      { status: 404 },
+      { status: 404, headers: cors },
     );
   }
 
@@ -71,7 +90,7 @@ export async function POST(
         error: "invalid_signature",
         message: "HMAC digest did not match the request body.",
       },
-      { status: 401 },
+      { status: 401, headers: cors },
     );
   }
 
@@ -81,7 +100,7 @@ export async function POST(
   } catch {
     return NextResponse.json(
       { error: "invalid_json", message: "Body must be valid JSON." },
-      { status: 400 },
+      { status: 400, headers: cors },
     );
   }
 
@@ -95,7 +114,7 @@ export async function POST(
         message: "Both symbol and action are required.",
         required: ["symbol", "action"],
       },
-      { status: 422 },
+      { status: 422, headers: cors },
     );
   }
 
@@ -105,7 +124,7 @@ export async function POST(
         error: "invalid_action",
         message: `action must be buy, sell or close — received "${action}".`,
       },
-      { status: 422 },
+      { status: 422, headers: cors },
     );
   }
 
@@ -121,7 +140,7 @@ export async function POST(
           message: "This alert_id was already processed.",
           first_seen: new Date(first).toISOString(),
         },
-        { status: 409 },
+        { status: 409, headers: cors },
       );
     }
     seen.set(body.alert_id, now);
@@ -146,7 +165,7 @@ export async function POST(
       },
       latency_ms: Date.now() - started,
     },
-    { status: 201 },
+    { status: 201, headers: cors },
   );
 }
 
@@ -164,6 +183,20 @@ export async function GET() {
         alert_id: "string, optional idempotency key",
       },
     },
-    { status: 200 },
+    { status: 200, headers: { "Cache-Control": "public, max-age=3600" } },
   );
+}
+
+export async function OPTIONS(request: Request) {
+  return preflight(request, METHODS);
+}
+
+export async function PUT() {
+  return methodNotAllowed(METHODS);
+}
+export async function DELETE() {
+  return methodNotAllowed(METHODS);
+}
+export async function PATCH() {
+  return methodNotAllowed(METHODS);
 }
