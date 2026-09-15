@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Geist, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const geist = Geist({
-  variable: "--font-geist",
+const sans = Geist({
+  variable: "--font-sans-src",
   subsets: ["latin"],
   display: "swap",
 });
@@ -16,21 +16,19 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "QuantPulse — Backtest, signal, execute",
+    default: "QuantPulse — find alpha in market data",
     template: "%s · QuantPulse",
   },
   description:
-    "Backtest quantitative strategies against real market structure, then route the signals straight to your broker over a secure webhook. Sub-20ms execution.",
+    "Test whether a trading signal actually predicts the next move. Real quant factor research — information coefficient, decay and quintile analysis — on live Yahoo Finance data.",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geist.variable} ${mono.variable}`}>
-      <body className="min-h-dvh bg-base text-text antialiased">
-        {children}
-      </body>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      <body className="min-h-dvh bg-base text-text antialiased">{children}</body>
     </html>
   );
 }

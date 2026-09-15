@@ -1,9 +1,10 @@
 # QuantPulse
 
-Algorithmic trading research and webhook execution, built as a runnable Next.js
-application. Backtest a strategy against three years of market structure, read
-the risk-adjusted metrics, then route the live signal to a broker over a signed
-webhook.
+A quant factor research tool. Pick a stock, pick a factor, and find out whether
+it actually predicts the next move — measured the way a quant fund measures it,
+using real market data.
+
+An introduction to quant research, built as a runnable Next.js app.
 
 ## Running it
 
@@ -15,94 +16,93 @@ Then open <http://localhost:3000>.
 
 > **Node runtime.** This machine had no Node installation, so a portable build
 > (Node 24.21.0) was extracted to `%LOCALAPPDATA%\nodejs-portable` and added to
-> your user `PATH`. A new terminal will pick it up automatically. If a shell
-> still cannot find `node`, run `dev.cmd` in this folder — it pins the path
-> before starting the server.
-
-Other scripts:
+> your user `PATH`. A new terminal picks it up automatically. If a shell still
+> cannot find `node`, run `dev.cmd` in this folder — it pins the path first.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Dev server with HMR on port 3000 |
+| `npm run dev` | Dev server on port 3000 |
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
-| `npm run lint` | ESLint |
+| `npm run check` | typecheck + lint + build |
+| `npm run deploy` | Pre-deploy gate, then commit and push (Git Bash) |
 
-## Routes
+## Pages
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Landing page with a live, interactive backtest widget |
-| `/dashboard` | Backtesting workspace — controls, equity curve, trade log |
-| `/dashboard/backtester` | Strategy lab with a full parameter sweep |
-| `/dashboard/webhooks` | Endpoint generator, payload helper, live execution feed |
-| `/dashboard/api-keys` | Key management and request signing reference |
-| `/dashboard/settings` | Broker connections and execution guardrails |
-| `/api/webhook/[key]` | Working webhook receiver (POST) |
+| `/` | Landing page |
+| `/dashboard` | The alpha terminal — the tool itself |
+| `/guide` | How to use it, and how to read every statistic |
+| `/membership` | Account area and tiers (UI only — see below) |
+| `/api/history` | Daily OHLCV for one ticker (GET) |
 
-## The engine is real
+## Market data is real
 
-Nothing on the metrics surfaces is hardcoded. Every number — CAGR, Sharpe,
-Sortino, max drawdown, win rate, profit factor, exposure — is computed by
-`src/lib/backtest.ts` from the price series, on every parameter change. Change
-the asset in the hero widget and the whole panel recomputes.
+Prices come from Yahoo Finance via [`yahoo-finance2`](https://github.com/gadicc/yahoo-finance2)
+— the same endpoints the Python `yfinance` package reads, in TypeScript so the
+app stays on one runtime and deploys to Vercel without a Python function.
 
-- **`src/lib/market-data.ts`** — deterministic price generator. Geometric
-  Brownian motion with an Ornstein–Uhlenbeck regime term so the series trends
-  and mean-reverts the way real instruments do. Raw GBM over three years at
-  20–60% vol makes the terminal price a coin flip, so the drift is *bridged*:
-  after generating the path, a constant is added to every log return to land the
-  series on a realistic total return. Daily volatility, regime texture and
-  drawdown shape are untouched. Seeded per symbol, so results are identical
-  across server render, client hydration and reloads.
-- **`src/lib/indicators.ts`** — SMA, Wilder-smoothed RSI, Donchian rolling
-  extremes.
-- **`src/lib/strategies.ts`** — Dual Moving Average, RSI Reversion, Breakout
-  Momentum. Each returns a per-bar exposure of 1 (long) or 0 (flat), evaluated
-  on bar close, which is when a TradingView alert would actually fire.
-- **`src/lib/backtest.ts`** — the engine. Long-only, fully invested, 5 bps a
-  side. Stops and targets are checked against the bar's high/low rather than the
-  close, and a risk exit starts a 5-bar cooldown before re-entry so one stop
-  does not immediately re-trigger.
+Any ticker Yahoo carries works: `AAPL`, `BRK-B`, `BTC-USD`, `^GSPC`, `VOD.L`,
+`EURUSD=X`. Three years of daily bars, fetched once per symbol and cached at the
+edge for an hour.
 
-Because the engine is honest, strategies lose on some assets. That is the point:
-`/dashboard/backtester` sweeps the lookback across its whole range so you can
-see whether a good result sits on a plateau or a single curve-fit spike.
+`src/lib/market.ts` is server-only (`yahoo-finance2` needs `node:module` and
+cannot be bundled for the browser). Anything the client needs — the ticker list,
+shared types — lives in `src/lib/symbols.ts`.
 
-## The webhook endpoint works
+## How the analysis works
 
-`POST /api/webhook/:key` is a real handler, not a stub. It validates the key,
-optionally verifies an HMAC-SHA256 signature over the raw body (set
-`QP_WEBHOOK_SECRET` to enable — without it the endpoint stays open for local
-testing), rejects duplicate `alert_id` values inside a 60-second window, and
-returns a simulated order.
+`src/lib/alpha.ts` is the engine. A **factor** turns price history into one
+score per day; the engine then measures that score against *forward* returns —
+returns it could not have seen.
 
-```bash
-curl -X POST http://localhost:3000/api/webhook/wh_live_8f2c41d9a6b3e057 \
-  -H "Content-Type: application/json" \
-  -d '{"symbol":"SPY","action":"buy","qty":10,"price":514.2,"alert_id":"a-1"}'
-```
+- **Information coefficient** — Spearman rank correlation between the score and
+  the forward return. Rank-based, so one outlier day cannot manufacture an edge.
+- **t-statistic** — whether the IC is large enough, given the sample, to be
+  unlikely by chance. Below 2 in magnitude, treat the IC as noise.
+- **Decay** — the IC recomputed at 1, 5, 10, 21 and 63 days forward, showing how
+  fast the edge fades.
+- **Quintile ladder** — every day sorted into five buckets by score, with each
+  bucket's mean forward return. A usable factor steps upward from Q1 to Q5.
+- **Equity curve** — long whenever the score is in the top 40% of everything
+  seen *up to that day*, flat otherwise. The threshold never uses future data
+  and there is a one-year warm-up, so it is a fair test rather than a curve fit.
+  Costs and slippage are not modelled.
 
-Returns `201` with the routed order. Send it twice and the second call returns
-`409 duplicate_alert`. An unknown key returns `404`; an action other than
-buy/sell/close returns `422`.
+Five factors ship: momentum, short-term reversal, risk-adjusted momentum,
+distance from trend, and volume thrust.
 
-Order execution is simulated — there are no brokerage credentials here.
+### It will often tell you the factor doesn't work
 
-## Design system
+That is the correct answer most of the time, and reading it is the point. A
+negative IC means the factor is *inverted* on that asset — high scores precede
+weaker returns — which is still information, and the interface says so rather
+than dressing it up. Momentum on AAPL over the current window has an IC around
+−0.14 with a t-stat near −3.4: a real effect, pointing the opposite way to the
+textbook thesis.
 
-Deep charcoal surfaces (`#0B0F17`) layered by elevation, `#1E293B` hairlines,
-muted `#94A3B8` type, and colour reserved for meaning: `#10B981` profit,
-`#EF4444` loss, `#3B82F6` interactive. Every financial figure uses JetBrains
-Mono with `tabular-nums` (the `.tnum` utility) so columns of numbers align
-digit-for-digit. Tokens live in `src/app/globals.css` under `@theme`.
+## Membership is UI only
+
+`/membership` renders the account area and tiers, but **nothing is wired**.
+There is no authentication, no database, no billing, and the sign-in form does
+not submit anywhere. The terminal is fully usable without an account.
+
+## Design
+
+A terminal-leaning interface: near-black surfaces (`#07090D`), visible hairline
+grid, square corners, amber (`#FFB020`) as the primary accent rather than blue,
+and JetBrains Mono as the default face — prose passages opt back into Geist via
+`.prose-face`. Every figure is tabular so columns align digit-for-digit. Tokens
+live in `src/app/globals.css` under `@theme`.
 
 ## Stack
 
 Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Tailwind CSS v4 ·
-Recharts · Radix UI primitives · Lucide icons.
+Recharts · Lucide icons · yahoo-finance2.
 
 ---
 
-Market data is simulated and backtested results are hypothetical. This is a
-demonstration application, not investment advice.
+Educational research tool. Hypothetical results exclude costs and slippage, and
+past behaviour does not predict future returns. Nothing here is investment
+advice.

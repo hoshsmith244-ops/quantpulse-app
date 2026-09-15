@@ -1,38 +1,37 @@
 @import "tailwindcss";
 
 @theme {
-  /* Surfaces — deep charcoal, layered by elevation */
-  --color-base: #0b0f17;
-  --color-surface: #0f1521;
-  --color-raised: #141c2a;
-  --color-overlay: #182236;
+  /* Surfaces — near-black, layered by elevation */
+  --color-base: #07090d;
+  --color-panel: #0b0e14;
+  --color-raised: #11151e;
+  --color-overlay: #171c28;
 
-  /* Hairlines */
-  --color-line: #1e293b;
-  --color-line-soft: #172032;
-  --color-line-strong: #2b3a52;
+  /* Hairlines — the grid is part of the aesthetic, so lines are visible */
+  --color-line: #1c2331;
+  --color-line-soft: #141a25;
+  --color-edge: #2a3446;
 
   /* Type */
-  --color-bright: #f1f5f9;
-  --color-text: #cbd5e1;
-  --color-muted: #94a3b8;
-  --color-dim: #64748b;
-  --color-faint: #475569;
+  --color-bright: #e8edf4;
+  --color-text: #b8c2d0;
+  --color-muted: #8492a6;
+  --color-dim: #5d6a7d;
+  --color-faint: #414d5e;
 
-  /* Functional accents */
-  --color-profit: #10b981;
-  --color-profit-dim: #065f46;
-  --color-loss: #ef4444;
-  --color-loss-dim: #7f1d1d;
-  --color-accent: #3b82f6;
-  --color-accent-hover: #2563eb;
-  --color-warn: #f59e0b;
+  /* Functional — amber is the primary accent, not blue */
+  --color-amber: #ffb020;
+  --color-amber-dim: #7a5410;
+  --color-up: #00d492;
+  --color-down: #ff4d4d;
+  --color-info: #4d9fff;
 
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-sans-src), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono-src), ui-monospace, "SFMono-Regular", Menlo,
     monospace;
 
-  --radius-panel: 0.625rem;
+  /* Terminal furniture is square, not pill-shaped */
+  --radius-box: 2px;
 }
 
 @layer base {
@@ -47,41 +46,39 @@
   body {
     background-color: var(--color-base);
     color: var(--color-text);
-    font-family: var(--font-sans);
+    /* Mono is the default voice of the interface, not the exception. */
+    font-family: var(--font-mono);
+    font-size: 13px;
     -webkit-font-smoothing: antialiased;
-    font-feature-settings: "cv02", "cv03", "cv04";
   }
 
-  /* Every financial figure aligns on the decimal. */
+  /* Prose passages opt back into the sans face for readability. */
+  .prose-face {
+    font-family: var(--font-sans);
+  }
+
   .tnum {
-    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1, "zero" 1;
-    letter-spacing: -0.01em;
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--color-accent) 35%, transparent);
-    color: var(--color-bright);
+    background: var(--color-amber);
+    color: #000;
   }
 
-  /* Thin, unobtrusive scrollbars to match the dense data aesthetic */
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 9px;
+    height: 9px;
   }
   ::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--color-panel);
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-line);
-    border-radius: 99px;
-    border: 3px solid transparent;
-    background-clip: content-box;
+    background: var(--color-edge);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-line-strong);
-    background-clip: content-box;
+    background: var(--color-dim);
   }
 
   input[type="number"]::-webkit-outer-spin-button,
@@ -95,70 +92,67 @@
 }
 
 @layer utilities {
-  /* 1px grid wash used behind hero / empty states */
-  .grid-wash {
+  /* Fine graph-paper grid, the backdrop of a data instrument */
+  .grid-paper {
     background-image:
       linear-gradient(to right, var(--color-line-soft) 1px, transparent 1px),
       linear-gradient(to bottom, var(--color-line-soft) 1px, transparent 1px);
-    background-size: 56px 56px;
+    background-size: 32px 32px;
+  }
+
+  .scanline {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0 3px,
+      rgba(255, 255, 255, 0.012) 3px 4px
+    );
   }
 
   .mask-fade-b {
-    mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   }
 
-  .mask-fade-r {
-    mask-image: linear-gradient(to right, black 70%, transparent 100%);
+  /* Uppercase micro-label used on every panel and field */
+  .label {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-dim);
   }
 }
 
-@keyframes qp-pulse-dot {
+@keyframes qp-blink {
   0%,
-  100% {
+  49% {
     opacity: 1;
-    transform: scale(1);
   }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.82);
+  50%,
+  100% {
+    opacity: 0.15;
   }
 }
 
-@keyframes qp-slide-in {
+@keyframes qp-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(2px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 
-@keyframes qp-flow {
-  from {
-    stroke-dashoffset: 24;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
+.blink {
+  animation: qp-blink 1.2s steps(1) infinite;
 }
-
-.animate-pulse-dot {
-  animation: qp-pulse-dot 1.8s ease-in-out infinite;
-}
-.animate-slide-in {
-  animation: qp-slide-in 0.22s ease-out both;
-}
-.animate-flow {
-  stroke-dasharray: 6 6;
-  animation: qp-flow 1s linear infinite;
+.fade-in {
+  animation: qp-in 0.18s ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-pulse-dot,
-  .animate-slide-in,
-  .animate-flow {
+  .blink,
+  .fade-in {
     animation: none;
   }
 }
