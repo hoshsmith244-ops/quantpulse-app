@@ -16,8 +16,10 @@ import {
   Readout,
   Tag,
 } from "@/components/ui/terminal";
-import { gradeIC, type AlphaResult } from "@/lib/alpha";
+import { TuningPanel } from "@/components/terminal/tuning-panel";
+import { getFactor, gradeIC, type AlphaResult } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
+import type { Bar } from "@/lib/types";
 import type { Params } from "@/lib/use-alpha";
 import { cn } from "@/lib/utils";
 
@@ -26,10 +28,16 @@ export function AdvancedView({
   result,
   params,
   symbol,
+  bars,
+  onApplyParam,
+  sentimentMap,
 }: {
   result: AlphaResult;
   params: Params;
   symbol: string;
+  bars: Bar[];
+  onApplyParam: (param: number) => void;
+  sentimentMap?: Map<string, number>;
 }) {
   return (
     <>
@@ -158,6 +166,14 @@ export function AdvancedView({
           </Link>
         </p>
       </Panel>
+
+      <TuningPanel
+        bars={bars}
+        factor={getFactor(params.factor)}
+        currentParam={params.param}
+        onApply={onApplyParam}
+        sentimentMap={sentimentMap}
+      />
     </>
   );
 }

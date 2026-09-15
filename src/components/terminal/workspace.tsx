@@ -18,7 +18,8 @@ import { useMode } from "@/lib/use-mode";
 import { cn } from "@/lib/utils";
 
 export function Workspace() {
-  const { params, set, state, result, computing } = useAlpha();
+  const { params, set, state, result, computing, sentiment, sentimentMap } =
+    useAlpha();
   const meta = getFactor(params.factor);
 
   const [mode, setMode] = useMode();
@@ -59,7 +60,12 @@ export function Workspace() {
       />
 
       {mode === "simple" ? (
-        <SimpleStrategyPicker params={params} set={set} meta={meta} />
+        <SimpleStrategyPicker
+          params={params}
+          set={set}
+          meta={meta}
+          sentiment={sentiment}
+        />
       ) : null}
 
       {state.status === "error" ? (
@@ -76,7 +82,12 @@ export function Workspace() {
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)]">
-          <AdvancedControls params={params} set={set} meta={meta} />
+          <AdvancedControls
+            params={params}
+            set={set}
+            meta={meta}
+            sentiment={sentiment}
+          />
           <div
             className={cn(
               "min-w-0 overflow-auto transition-opacity",
@@ -87,6 +98,9 @@ export function Workspace() {
               result={result}
               params={params}
               symbol={params.symbol}
+              bars={state.history.bars}
+              onApplyParam={(p) => set("param", p)}
+              sentimentMap={sentimentMap}
             />
           </div>
         </div>

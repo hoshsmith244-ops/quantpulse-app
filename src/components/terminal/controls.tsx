@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/terminal";
 import { FACTORS, HORIZON_CHOICES, type FactorMeta } from "@/lib/alpha";
+import type { SentimentSeries } from "@/lib/symbols";
 import { PRESETS } from "@/lib/symbols";
 import type { Params } from "@/lib/use-alpha";
 import type { Mode } from "@/lib/use-mode";
@@ -80,15 +81,23 @@ export function TickerBar({
  * Strategy picker for simple mode: a plain dropdown plus one line explaining
  * what the strategy believes. No windows, no horizons, no jargon.
  */
+/** Factors whose data is actually available right now. */
+export function usableFactors(sentiment: SentimentSeries | null) {
+  return FACTORS.filter((f) => !f.external || sentiment?.available);
+}
+
 export function SimpleStrategyPicker({
   params,
   set,
   meta,
+  sentiment,
 }: {
   params: Params;
   set: <K extends keyof Params>(k: K, v: Params[K]) => void;
   meta: FactorMeta;
+  sentiment: SentimentSeries | null;
 }) {
+  const options = usableFactors(sentiment);
   return (
     <div className="flex flex-col gap-3 border-b border-line bg-panel px-4 py-3 sm:flex-row sm:items-center">
       <div className="flex items-center gap-2.5">
@@ -102,7 +111,7 @@ export function SimpleStrategyPicker({
             aria-label="Strategy"
             className="h-8 appearance-none border border-edge bg-base py-0 pl-2.5 pr-8 text-[13px] text-bright outline-none transition-colors hover:border-dim focus-visible:border-amber"
           >
-            {FACTORS.map((f) => (
+            {options.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.name}
               </option>
@@ -124,17 +133,20 @@ export function AdvancedControls({
   params,
   set,
   meta,
+  sentiment,
 }: {
   params: Params;
   set: <K extends keyof Params>(k: K, v: Params[K]) => void;
   meta: FactorMeta;
+  sentiment: SentimentSeries | null;
 }) {
+  const options = usableFactors(sentiment);
   return (
     <aside className="space-y-px border-b border-line bg-panel xl:border-b-0 xl:border-r">
       <div className="p-3">
         <Label>Factor</Label>
         <div className="mt-2 space-y-px">
-          {FACTORS.map((f) => (
+{options.map((f) => (
             <button
               key={f.id}
               onClick={() => set("factor", f.id)}

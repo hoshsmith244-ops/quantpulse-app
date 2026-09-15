@@ -17,7 +17,8 @@ export type FactorId =
   | "reversal"
   | "riskAdjMomentum"
   | "trendDistance"
-  | "volumeThrust";
+  | "volumeThrust"
+  | "newsSentiment";
 
 export type FactorMeta = {
   id: FactorId;
@@ -30,7 +31,9 @@ export type FactorMeta = {
   max: number;
   def: number;
   /** the family a quant would file this under */
-  family: "Trend" | "Mean reversion" | "Flow";
+  family: "Trend" | "Mean reversion" | "Flow" | "Sentiment";
+  /** needs data beyond the price series, so it can be unavailable */
+  external?: true;
 };
 
 export const FACTORS: FactorMeta[] = [
@@ -88,6 +91,18 @@ export const FACTORS: FactorMeta[] = [
     max: 120,
     def: 20,
     family: "Flow",
+  },
+  {
+    id: "newsSentiment",
+    name: "News sentiment",
+    thesis:
+      "Averages how bullish or bearish coverage has been. Needs an Alpha Vantage key.",
+    paramLabel: "Sentiment window",
+    min: 3,
+    max: 60,
+    def: 10,
+    family: "Sentiment",
+    external: true,
   },
 ];
 
@@ -179,10 +194,16 @@ const MOMENTUM_SKIP = 5;
  * One score per bar, or null where there is not enough history.
  * Every value uses only data available at that bar — no lookahead.
  */
+export type FactorInputs = {
+  /** ISO date -> daily sentiment score, for the news factor */
+  sentiment?: Map<string, number>;
+};
+
 export function computeFactor(
   bars: Bar[],
   id: FactorId,
   param: number,
+  inputs: FactorInputs = {},
 ): (number | null)[] {
   const close = bars.map((b) => b.close);
   const n = bars.length;
@@ -227,6 +248,31 @@ export function computeFactor(
       if (m === null || !v) continue;
       // Negated: far BELOW trend is the bullish (high) score.
       out[i] = -((close[i] - m) / m / (v * Math.sqrt(param)));
+    }
+    return out;
+  }
+
+  if (id === "newsSentiment") {
+    const series = inputs.sentiment;
+    if (!series || series.size === 0) return out;
+
+    // Carry the last known reading forward: most days have no coverage, and a
+    // quiet day does not reset the tone of the preceding week.
+    const filled: (number | null)[] = new Array(n).fill(null);
+    let last: number | null = null;
+    for (let i = 0; i < n; i++) {
+      const v = series.get(bars[i].date);
+      if (v !== undefined) last = v;
+      filled[i] = last;
+    }
+
+    for (let i = param; i < n; i++) {
+      const window = filled.slice(i - param + 1, i + 1).filter(
+        (v): v is number => v !== null,
+      );
+      // Require the window to be mostly covered before scoring it.
+      if (window.length < Math.max(2, param * 0.5)) continue;
+      out[i] = window.reduce((a, b) => a + b, 0) / window.length;
     }
     return out;
   }
@@ -360,8 +406,9 @@ export function analyse(
   factorId: FactorId,
   param: number,
   horizon: number,
+  inputs: FactorInputs = {},
 ): AlphaResult {
-  const scores = computeFactor(bars, factorId, param);
+  const scores = computeFactor(bars, factorId, param, inputs);
 
   // --- IC at the selected horizon --------------------------------------
   const fwd = forwardReturns(bars, horizon);
@@ -741,5 +788,113 @@ export function verdict(result: AlphaResult) {
     headline: "No real edge here",
     detail:
       "The results are within what random chance produces. This is the normal answer — most strategies do not work on most stocks.",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Walk-forward tuning
+// ---------------------------------------------------------------------------
+
+/** Simulation only — skips IC, decay and quantiles, so a sweep stays cheap. */
+export function evaluate(
+  bars: Bar[],
+  factorId: FactorId,
+  param: number,
+  inputs: FactorInputs = {},
+) {
+  return simulate(bars, computeFactor(bars, factorId, param, inputs));
+}
+
+export type TuningRow = {
+  param: number;
+  /** return over the training window, in percent */
+  trainPct: number;
+  /** return over the held-out window, in percent */
+  testPct: number;
+  trades: number;
+};
+
+export type Tuning = {
+  splitDate: string;
+  trainBars: number;
+  testBars: number;
+  rows: TuningRow[];
+  /** best on training data — what naive tuning would pick */
+  chosen: TuningRow;
+  /** best on the held-out window, visible only with hindsight */
+  hindsight: TuningRow;
+  /** what the parameter currently in use did out-of-sample */
+  current: TuningRow | null;
+  /** buy & hold over the held-out window, as the honest bar to clear */
+  testBuyHoldPct: number;
+  /** chosen.testPct - chosen.trainPct: how much the tuning flattered itself */
+  optimismGapPct: number;
+};
+
+/** Parameter values to try. Kept modest: a finer grid finds more noise. */
+const SWEEP_STEPS = 16;
+/** Share of the history used to choose the parameter. */
+const TRAIN_SHARE = 0.6;
+
+/**
+ * Tunes a factor's parameter the only way that means anything: choose it on
+ * older data, then report what it did on data the chooser never saw.
+ *
+ * Picking the parameter that made the most money across the WHOLE history is
+ * curve fitting — the result is guaranteed to look good and carries no
+ * information about the future. The gap between the training and held-out
+ * columns is the honest measure of how much of that result was luck.
+ */
+export function tune(
+  bars: Bar[],
+  factorId: FactorId,
+  currentParam: number,
+  inputs: FactorInputs = {},
+): Tuning | null {
+  const meta = getFactor(factorId);
+  const splitIdx = Math.floor(bars.length * TRAIN_SHARE);
+  if (splitIdx < 260 || bars.length - splitIdx < 60) return null;
+
+  const splitDate = bars[splitIdx].date;
+  const span = meta.max - meta.min;
+
+  const params = Array.from({ length: SWEEP_STEPS }, (_, i) =>
+    Math.round(meta.min + (span * i) / (SWEEP_STEPS - 1)),
+  ).filter((v, i, arr) => arr.indexOf(v) === i);
+
+  if (!params.includes(currentParam)) params.push(currentParam);
+  params.sort((a, b) => a - b);
+
+  const rows: TuningRow[] = params.map((param) => {
+    const { curve, trades } = evaluate(bars, factorId, param, inputs);
+    const start = curve[0].strategy;
+    const mid = curve[splitIdx].strategy;
+    const end = curve[curve.length - 1].strategy;
+
+    return {
+      param,
+      trainPct: (mid / start - 1) * 100,
+      testPct: (end / mid - 1) * 100,
+      trades: trades.filter((t) => t.exitDate !== null).length,
+    };
+  });
+
+  const chosen = rows.reduce((a, b) => (b.trainPct > a.trainPct ? b : a), rows[0]);
+  const hindsight = rows.reduce((a, b) => (b.testPct > a.testPct ? b : a), rows[0]);
+  const current = rows.find((r) => r.param === currentParam) ?? null;
+
+  const bh =
+    (bars[bars.length - 1].close / bars[splitIdx].close - 1) * 100;
+
+  return {
+    splitDate,
+    trainBars: splitIdx,
+    testBars: bars.length - splitIdx,
+    rows,
+    chosen,
+    hindsight,
+    current,
+    testBuyHoldPct: bh,
+    optimismGapPct: chosen.testPct - chosen.trainPct,
   };
 }

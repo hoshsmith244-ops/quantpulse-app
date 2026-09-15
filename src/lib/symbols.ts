@@ -83,3 +83,33 @@ export type MarketContext = {
  * built on is arguably no longer the right reference point.
  */
 export const STALE_DRIFT_PCT = 2;
+
+// --- News sentiment (Alpha Vantage) -----------------------------------------
+
+export type SentimentDay = {
+  /** ISO date */
+  date: string;
+  /** relevance-weighted mean sentiment, roughly -1..+1 */
+  score: number;
+  articles: number;
+};
+
+export type SentimentSeries = {
+  available: boolean;
+  /** why it is unavailable, when it is */
+  reason?: "no_key" | "rate_limited" | "provider" | "upstream" | "no_data";
+  message?: string;
+  daily: SentimentDay[];
+  articles: number;
+  /** calendar days between the first and last scored day */
+  coverageDays: number;
+  from?: string;
+  to?: string;
+};
+
+/**
+ * Days of sentiment coverage needed before the factor's statistics are worth
+ * reporting. Below this the sample is too short for an IC to mean anything,
+ * and a free Alpha Vantage key will usually land under it.
+ */
+export const MIN_SENTIMENT_DAYS = 400;

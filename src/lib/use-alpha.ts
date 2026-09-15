@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { analyse, getFactor, type AlphaResult, type FactorId } from "./alpha";
-import type { History } from "./symbols";
+import type { History, SentimentSeries } from "./symbols";
 
 export type Params = {
   symbol: string;
@@ -44,6 +44,7 @@ export function useAlpha(initial: Partial<Params> = {}) {
     ...initial,
   });
   const [loaded, setLoaded] = React.useState<Loaded | null>(null);
+  const [sentiment, setSentiment] = React.useState<SentimentSeries | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -77,6 +78,26 @@ export function useAlpha(initial: Partial<Params> = {}) {
     };
   }, [params.symbol]);
 
+  // Sentiment is optional — it needs an API key — so the factor that depends
+  // on it stays hidden unless real data comes back.
+  React.useEffect(() => {
+    let cancelled = false;
+    const url = `/api/sentiment?symbol=${encodeURIComponent(params.symbol)}`;
+
+    fetch(url)
+      .then((r) => r.json())
+      .then((body: SentimentSeries) => {
+        if (!cancelled) setSentiment(body);
+      })
+      .catch(() => {
+        if (!cancelled) setSentiment(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.symbol]);
+
   const state: State = React.useMemo(() => {
     if (!loaded || loaded.symbol !== params.symbol) return { status: "loading" };
     return loaded.ok
@@ -87,6 +108,11 @@ export function useAlpha(initial: Partial<Params> = {}) {
   const deferred = React.useDeferredValue(params);
   const computing = params !== deferred;
 
+  const sentimentMap = React.useMemo(() => {
+    if (!sentiment?.available) return undefined;
+    return new Map(sentiment.daily.map((d) => [d.date, d.score]));
+  }, [sentiment]);
+
   const result: AlphaResult | null = React.useMemo(() => {
     if (state.status !== "ready") return null;
     return analyse(
@@ -94,8 +120,9 @@ export function useAlpha(initial: Partial<Params> = {}) {
       deferred.factor,
       deferred.param,
       deferred.horizon,
+      { sentiment: sentimentMap },
     );
-  }, [state, deferred]);
+  }, [state, deferred, sentimentMap]);
 
   const set = React.useCallback(
     <K extends keyof Params>(key: K, value: Params[K]) => {
@@ -110,5 +137,14 @@ export function useAlpha(initial: Partial<Params> = {}) {
     [],
   );
 
-  return { params, set, setParams, state, result, computing };
+  return {
+    params,
+    set,
+    setParams,
+    state,
+    result,
+    computing,
+    sentiment,
+    sentimentMap,
+  };
 }
