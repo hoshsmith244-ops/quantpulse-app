@@ -283,6 +283,51 @@ export type AlphaResult = {
   /** equity curve of the long-only rule vs buy & hold */
   curve: CurvePoint[];
   strategy: StrategyStats;
+  /** every completed round trip, newest last */
+  trades: Trade[];
+  /** plain-English track record of those trades */
+  record: TradeRecord;
+  /** what the rule says right now */
+  signal: Signal;
+};
+
+export type Trade = {
+  entryDate: string;
+  /** null while the position is still open */
+  exitDate: string | null;
+  entryPrice: number;
+  exitPrice: number | null;
+  returnPct: number;
+  barsHeld: number;
+};
+
+export type TradeRecord = {
+  completed: number;
+  wins: number;
+  winRatePct: number;
+  avgWinPct: number;
+  avgLossPct: number;
+  bestPct: number;
+  worstPct: number;
+  avgHoldDays: number;
+};
+
+/** The current state of the rule, phrased for someone reading it cold. */
+export type Signal = {
+  state: "in" | "out";
+  /** the position flipped on the most recent bar */
+  freshToday: boolean;
+  /** bars the rule has been in this state */
+  daysInState: number;
+  /** latest factor score, and the score needed to be long */
+  score: number | null;
+  threshold: number | null;
+  /** 0-100: how close the score is to the entry trigger */
+  proximityPct: number | null;
+  /** set while a position is open */
+  entryDate: string | null;
+  entryPrice: number | null;
+  openReturnPct: number | null;
 };
 
 export type CurvePoint = {
@@ -405,7 +450,7 @@ export function analyse(
   // Long whenever the score sits in the top two quintiles of its own history
   // to date. Threshold is computed from PAST scores only, so the rule is
   // tradeable rather than fitted with hindsight.
-  const { curve, stats } = simulate(bars, scores);
+  const { curve, stats, trades, record, signal } = simulate(bars, scores);
 
   return {
     ic,
@@ -418,23 +463,35 @@ export function analyse(
     current: { score: currentScore, percentile, bucket },
     curve,
     strategy: stats,
+    trades,
+    record,
+    signal,
   };
 }
 
 /** Minimum history before the rule is allowed to take a position. */
 const WARMUP = 252;
 
+/** The rule goes long once the score ranks above this percentile of its history. */
+const ENTRY_PERCENTILE = 60;
+
 function simulate(bars: Bar[], scores: (number | null)[]) {
   const curve: CurvePoint[] = [];
   const seen: number[] = [];
+  const trades: Trade[] = [];
 
   let equity = 1;
   let peak = 1;
   let maxDd = 0;
   let inMarket = false;
   let daysIn = 0;
-  let trades = 0;
+  let flips = 0;
   const rets: number[] = [];
+
+  // Open-position bookkeeping, so each round trip can be reported.
+  let entryIndex = -1;
+  let lastFlipIndex = 0;
+  let threshold: number | null = null;
 
   const base = bars[0].close;
 
@@ -466,13 +523,106 @@ function simulate(bars: Bar[], scores: (number | null)[]) {
       seen.push(s);
       if (seen.length >= WARMUP) {
         const sortedSeen = [...seen].sort((a, b) => a - b);
-        const threshold = sortedSeen[Math.floor(sortedSeen.length * 0.6)];
+        threshold = sortedSeen[Math.floor((sortedSeen.length * ENTRY_PERCENTILE) / 100)];
         const want = s >= threshold;
-        if (want !== inMarket) trades++;
+
+        if (want !== inMarket) {
+          flips++;
+          lastFlipIndex = i;
+          if (want) {
+            entryIndex = i;
+          } else if (entryIndex >= 0) {
+            const entry = bars[entryIndex];
+            trades.push({
+              entryDate: entry.date,
+              exitDate: bars[i].date,
+              entryPrice: entry.close,
+              exitPrice: bars[i].close,
+              returnPct: (bars[i].close / entry.close - 1) * 100,
+              barsHeld: i - entryIndex,
+            });
+            entryIndex = -1;
+          }
+        }
         inMarket = want;
       }
     }
   }
+
+  const lastIndex = bars.length - 1;
+  const last = bars[lastIndex];
+
+  // Surface a still-open position as an unfinished trade.
+  if (inMarket && entryIndex >= 0) {
+    const entry = bars[entryIndex];
+    trades.push({
+      entryDate: entry.date,
+      exitDate: null,
+      entryPrice: entry.close,
+      exitPrice: null,
+      returnPct: (last.close / entry.close - 1) * 100,
+      barsHeld: lastIndex - entryIndex,
+    });
+  }
+
+  const latestScore = (() => {
+    for (let i = lastIndex; i >= 0; i--) {
+      const s = scores[i];
+      if (s !== null && Number.isFinite(s)) return s;
+    }
+    return null;
+  })();
+
+  // How close the score sits to the entry trigger, as a 0-100 reading.
+  //
+  // Measured in PERCENTILE terms, not raw score distance. Raw distance is
+  // useless here: scores cluster, so the gap to the threshold is almost always
+  // a sliver of the full range and the gauge would read 95% forever. Ranking
+  // the score against its own history and comparing to the trigger's rank
+  // (the 60th percentile) gives a reading that actually moves.
+  let proximityPct: number | null = null;
+  if (latestScore !== null && seen.length > 1) {
+    const below = seen.filter((v) => v <= latestScore).length;
+    const percentile = (below / seen.length) * 100;
+    proximityPct = Math.max(0, Math.min(100, (percentile / ENTRY_PERCENTILE) * 100));
+  }
+
+  const openTrade = inMarket && entryIndex >= 0 ? bars[entryIndex] : null;
+
+  const signal: Signal = {
+    state: inMarket ? "in" : "out",
+    freshToday: lastFlipIndex === lastIndex && seen.length >= WARMUP,
+    daysInState: lastIndex - lastFlipIndex,
+    score: latestScore,
+    threshold,
+    proximityPct,
+    entryDate: openTrade?.date ?? null,
+    entryPrice: openTrade?.close ?? null,
+    openReturnPct: openTrade
+      ? (last.close / openTrade.close - 1) * 100
+      : null,
+  };
+
+  const completed = trades.filter((t) => t.exitDate !== null);
+  const wins = completed.filter((t) => t.returnPct > 0);
+  const losses = completed.filter((t) => t.returnPct <= 0);
+
+  const record: TradeRecord = {
+    completed: completed.length,
+    wins: wins.length,
+    winRatePct: completed.length ? (wins.length / completed.length) * 100 : 0,
+    avgWinPct: wins.length ? mean(wins.map((t) => t.returnPct)) : 0,
+    avgLossPct: losses.length ? mean(losses.map((t) => t.returnPct)) : 0,
+    bestPct: completed.length
+      ? Math.max(...completed.map((t) => t.returnPct))
+      : 0,
+    worstPct: completed.length
+      ? Math.min(...completed.map((t) => t.returnPct))
+      : 0,
+    avgHoldDays: completed.length
+      ? mean(completed.map((t) => t.barsHeld))
+      : 0,
+  };
 
   const years = bars.length / TRADING_DAYS;
   const sd = stdev(rets);
@@ -480,15 +630,17 @@ function simulate(bars: Bar[], scores: (number | null)[]) {
 
   return {
     curve,
+    trades,
+    record,
+    signal,
     stats: {
       totalReturnPct: (equity - 1) * 100,
-      buyHoldReturnPct:
-        (bars[bars.length - 1].close / base - 1) * 100,
+      buyHoldReturnPct: (last.close / base - 1) * 100,
       cagr: years > 0 ? (equity ** (1 / years) - 1) * 100 : 0,
       sharpe: sd > 0 ? (m / sd) * Math.sqrt(TRADING_DAYS) : 0,
       maxDrawdownPct: maxDd * 100,
       exposurePct: bars.length ? (daysIn / bars.length) * 100 : 0,
-      trades,
+      trades: flips,
     } satisfies StrategyStats,
   };
 }
@@ -536,3 +688,58 @@ export function gradeIC(ic: number, tStat: number) {
 }
 
 export const HORIZON_CHOICES = HORIZONS;
+
+/**
+ * A single trust rating for someone who does not want to read a t-statistic.
+ *
+ * Deliberately hard to get a green light: the evidence has to be statistically
+ * real, point the right way, rest on enough trades, and actually have beaten
+ * buying and holding. Most factor/ticker pairs will land on "weak", which is
+ * the truthful answer.
+ */
+export function verdict(result: AlphaResult) {
+  const significant = Math.abs(result.icTStat) >= 2;
+  const rightWay = result.ic > 0;
+  const enoughTrades = result.record.completed >= 5;
+  const beatsHolding =
+    result.strategy.totalReturnPct > result.strategy.buyHoldReturnPct;
+
+  if (significant && !rightWay) {
+    return {
+      level: "inverted" as const,
+      tone: "amber" as const,
+      headline: "Backwards on this stock",
+      detail:
+        "There is a real pattern here, but it runs the opposite way to the idea behind this strategy. High scores have come before weaker returns, not stronger ones.",
+    };
+  }
+
+  if (significant && rightWay && enoughTrades && beatsHolding) {
+    return {
+      level: "promising" as const,
+      tone: "up" as const,
+      headline: "Worth a closer look",
+      detail:
+        "The pattern is statistically real, points the right way, and has beaten simply holding the stock. That is rare — check it on a few other tickers before trusting it.",
+    };
+  }
+
+  if (significant && rightWay) {
+    return {
+      level: "mixed" as const,
+      tone: "amber" as const,
+      headline: "Real, but it did not pay",
+      detail: beatsHolding
+        ? "The pattern is real but rests on very few trades, so treat it carefully."
+        : "The pattern is real, yet trading it still trailed simply buying and holding the stock.",
+    };
+  }
+
+  return {
+    level: "weak" as const,
+    tone: "dim" as const,
+    headline: "No real edge here",
+    detail:
+      "The results are within what random chance produces. This is the normal answer — most strategies do not work on most stocks.",
+  };
+}

@@ -9,18 +9,18 @@ import { FACTORS } from "@/lib/alpha";
 const STEPS = [
   {
     n: "01",
-    title: "Pick a ticker",
-    body: "Any symbol Yahoo Finance carries. Three years of daily bars load in under a second.",
+    title: "Pick a stock",
+    body: "Any ticker Yahoo Finance carries — AAPL, TSLA, BTC-USD. Three years of daily prices load in under a second.",
   },
   {
     n: "02",
-    title: "Choose a factor",
-    body: "Momentum, reversal, trend distance, volume thrust. Each turns price history into one score per day.",
+    title: "Pick a strategy",
+    body: "Five classic ones, each explained in a sentence. No formulas to write and nothing to configure.",
   },
   {
     n: "03",
-    title: "Read the evidence",
-    body: "Information coefficient, decay curve, quintile ladder. The statistics that separate an edge from a coincidence.",
+    title: "See what it says",
+    body: "Hold or stay out, when it would have bought, every past trade it made, and whether it beat simply holding.",
   },
 ];
 
@@ -66,46 +66,67 @@ export default function LandingPage() {
           </h1>
 
           <p className="prose-face mt-5 max-w-xl text-[14px] leading-relaxed text-muted">
-            QuantPulse runs real quant factor research on live market data. Pick
-            a stock, pick a factor, and see whether it actually predicts the next
-            move — measured the way a quant fund measures it, not with a
-            back-fitted equity curve.
+            Type in a stock. Pick a strategy. QuantPulse tells you in plain
+            English whether that strategy would be holding it right now — and
+            whether it has ever actually worked on that stock.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-2.5">
             <Button size="lg" variant="primary" asChild>
               <Link href="/dashboard">
-                Run your first analysis
+                Try it on a stock
                 <ArrowRight />
               </Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <Link href="/guide">Read the guide</Link>
+              <Link href="/guide">New to this? Start here</Link>
             </Button>
           </div>
+
+          <p className="prose-face mt-3 text-[12px] text-dim">
+            Free · no account needed · real market data
+          </p>
 
           {/* Terminal sketch */}
           <div className="mt-14 max-w-2xl">
             <Panel>
               <PanelHead
-                title="AAPL · momentum · 5d forward"
+                title="AAPL · momentum strategy"
                 right={<Tag tone="amber">sample</Tag>}
               />
-              <pre className="tnum overflow-x-auto px-4 py-3 text-[12px] leading-[1.9] text-text">
-{`  INFORMATION COEFF     -0.137   `}<span className="text-down">inverted</span>{`
-  T-STATISTIC            -3.43   `}<span className="text-up">significant</span>{`
-  Q5 - Q1 SPREAD        -1.22%
-  HIT RATE               53.0%
-  SAMPLE                   614 observations
-
-  QUINTILE LADDER  `}<span className="text-up">▇▇▇</span>{` `}<span className="text-up">▇▇▇▇▇</span>{` `}<span className="text-up">▇▇</span>{` `}<span className="text-up">▇▇</span>{` `}<span className="text-down">▇</span>{`
-                    Q1    Q2   Q3  Q4 Q5`}
-              </pre>
+              <div className="px-4 py-4">
+                <span className="label">The strategy says</span>
+                <div className="mt-2 text-[26px] leading-none text-up">
+                  HOLD
+                </div>
+                <p className="prose-face mt-3 text-[12px] leading-relaxed text-text">
+                  Bought <span className="text-bright">AAPL</span> on{" "}
+                  <span className="text-bright">3 Sep 2026</span> at{" "}
+                  <span className="tnum text-bright">328.21</span>, still
+                  holding. That position is{" "}
+                  <span className="text-up">+1.2%</span> so far.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-4">
+                {[
+                  ["Win rate", "57%", "text-bright"],
+                  ["Average win", "+3.1%", "text-up"],
+                  ["Average loss", "−2.9%", "text-down"],
+                  ["Typical hold", "19 days", "text-bright"],
+                ].map(([k, v, tone]) => (
+                  <div key={k} className="bg-panel px-3 py-2.5">
+                    <span className="label block truncate">{k}</span>
+                    <span className={`tnum mt-1 block text-[15px] ${tone}`}>
+                      {v}
+                    </span>
+                  </div>
+                ))}
+              </div>
               <p className="prose-face border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-dim">
-                A real result. Momentum on Apple is{" "}
-                <span className="text-down">negatively</span> predictive over
-                this window — high scores precede weaker returns. Knowing that is
-                worth more than a chart that only goes up.
+                A real result from the tool. It also tells you this particular
+                strategy has{" "}
+                <span className="text-amber">no proven edge on Apple</span> —
+                which is more useful than a chart that only goes up.
               </p>
             </Panel>
           </div>

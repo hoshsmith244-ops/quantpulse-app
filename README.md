@@ -32,7 +32,7 @@ Then open <http://localhost:3000>.
 | Route | Purpose |
 | --- | --- |
 | `/` | Landing page |
-| `/dashboard` | The alpha terminal — the tool itself |
+| `/dashboard` | The tool. Opens in **Simple** mode; **Advanced** holds the statistics |
 | `/guide` | How to use it, and how to read every statistic |
 | `/membership` | Account area and tiers (UI only — see below) |
 | `/api/history` | Daily OHLCV for one ticker (GET) |
@@ -50,6 +50,18 @@ edge for an hour.
 `src/lib/market.ts` is server-only (`yahoo-finance2` needs `node:module` and
 cannot be bundled for the browser). Anything the client needs — the ticker list,
 shared types — lives in `src/lib/symbols.ts`.
+
+## Two modes
+
+The terminal opens in **Simple** mode, which answers the question a newer
+trader actually has: is this strategy holding this stock right now, when would
+it have bought, how have its past trades gone, and is there any evidence it
+works. One plain-English verdict, a price chart with entry and exit points
+marked, and a table of every trade.
+
+**Advanced** mode exposes the research surface underneath — information
+coefficient, significance, decay, quintile ladder, equity curve — plus the
+lookback and forward-horizon controls. The choice is remembered per browser.
 
 ## How the analysis works
 

@@ -10,6 +10,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -17,7 +18,12 @@ import {
   YAxis,
 } from "recharts";
 
-import type { CurvePoint, ICPoint, QuantileBucket } from "@/lib/alpha";
+import type {
+  CurvePoint,
+  ICPoint,
+  QuantileBucket,
+  Trade as AlphaTrade,
+} from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -273,6 +279,143 @@ export function QuantileChart({
             ))}
           </Bar>
         </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/**
+ * Price with the strategy's entry and exit points marked, plus shaded bands
+ * for the stretches it was holding. For a newer trader this reads far more
+ * directly than an equity curve: it shows where the rule would have bought.
+ */
+export function PriceWithTrades({
+  bars,
+  trades,
+  height = 300,
+}: {
+  bars: { date: string; close: number }[];
+  trades: AlphaTrade[];
+  height?: number;
+}) {
+  // Deliberately NOT thinned. ReferenceArea and ReferenceLine match a category
+  // axis by exact value, so a trade date dropped by thinning would make
+  // Recharts fall back to the axis edge and shade the whole chart green.
+  // ~750 daily points render fine.
+  const points = React.useMemo(
+    () => bars.map((b) => ({ date: b.date, close: b.close })),
+    [bars],
+  );
+
+  // Dense strategies produce a hundred-plus round trips; drawing a dashed line
+  // at every entry and exit turns the plot into a picket fence, so past a
+  // threshold the shaded bands carry the information on their own.
+  const showMarkers = trades.length <= 25;
+
+  return (
+    <div style={{ height }} className="w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id="qp-price" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={AMBER} stopOpacity={0.14} />
+              <stop offset="100%" stopColor={AMBER} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis
+            dataKey="date"
+            tickFormatter={shortDate}
+            tick={{ fill: AXIS, fontSize: 10 }}
+            axisLine={{ stroke: GRID }}
+            tickLine={false}
+            minTickGap={44}
+          />
+          <YAxis
+            tick={{ fill: AXIS, fontSize: 10 }}
+            axisLine={false}
+            tickLine={false}
+            width={58}
+            domain={["auto", "auto"]}
+            tickFormatter={(v: number) => v.toFixed(0)}
+          />
+
+          {/* Shade each holding period */}
+          {trades.map((t, i) => (
+            <ReferenceArea
+              key={`band-${i}`}
+              x1={t.entryDate}
+              x2={t.exitDate ?? points[points.length - 1]?.date}
+              fill={UP}
+              fillOpacity={0.07}
+              stroke="none"
+            />
+          ))}
+
+          {/* Entry and exit markers, only while they stay legible */}
+          {showMarkers
+            ? trades.map((t, i) => (
+                <ReferenceLine
+                  key={`in-${i}`}
+                  x={t.entryDate}
+                  stroke={UP}
+                  strokeWidth={1}
+                  strokeDasharray="2 2"
+                />
+              ))
+            : null}
+          {showMarkers
+            ? trades.map((t, i) =>
+                t.exitDate ? (
+                  <ReferenceLine
+                    key={`out-${i}`}
+                    x={t.exitDate}
+                    stroke={DOWN}
+                    strokeWidth={1}
+                    strokeDasharray="2 2"
+                  />
+                ) : null,
+              )
+            : null}
+
+          <Tooltip
+            cursor={{ stroke: AMBER, strokeWidth: 1, strokeDasharray: "2 2" }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const p = payload[0].payload as { date: string; close: number };
+              const holding = trades.find(
+                (t) =>
+                  p.date >= t.entryDate &&
+                  (t.exitDate === null || p.date <= t.exitDate),
+              );
+              return (
+                <div className={tipBox}>
+                  <div className="tnum mb-1 text-muted">{p.date}</div>
+                  <Row
+                    label="Price"
+                    value={p.close.toFixed(2)}
+                    tone="text-bright"
+                  />
+                  <Row
+                    label="Strategy"
+                    value={holding ? "HOLDING" : "no position"}
+                    tone={holding ? "text-up" : "text-faint"}
+                  />
+                </div>
+              );
+            }}
+          />
+
+          <Area
+            type="monotone"
+            dataKey="close"
+            stroke={AMBER}
+            strokeWidth={1.5}
+            fill="url(#qp-price)"
+            dot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

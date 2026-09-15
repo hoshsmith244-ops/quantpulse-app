@@ -30,15 +30,16 @@ export function TopBar() {
   const pathname = usePathname();
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-5 border-b border-line bg-panel px-4">
-      <Link href="/" className="flex items-center gap-2">
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-3 sm:gap-5 sm:px-4">
+      <Link href="/" className="flex shrink-0 items-center gap-2">
         <Logo className="size-[18px]" />
-        <span className="text-[13px] font-medium tracking-[0.02em] text-bright">
+        {/* The wordmark is the first thing to go when space is tight. */}
+        <span className="hidden text-[13px] font-medium tracking-[0.02em] text-bright sm:inline">
           QUANTPULSE
         </span>
       </Link>
 
-      <nav className="flex items-center">
+      <nav className="flex min-w-0 flex-1 items-center overflow-x-auto">
         {NAV.map((n) => {
           const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
           return (
@@ -46,7 +47,7 @@ export function TopBar() {
               key={n.href}
               href={n.href}
               className={cn(
-                "border-b-2 px-3 py-[11px] text-[12px] uppercase tracking-[0.1em] transition-colors",
+                "shrink-0 border-b-2 px-2.5 py-[11px] text-[12px] uppercase tracking-[0.1em] transition-colors sm:px-3",
                 active
                   ? "border-amber text-amber"
                   : "border-transparent text-dim hover:text-bright",
@@ -58,7 +59,7 @@ export function TopBar() {
         })}
       </nav>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex shrink-0 items-center gap-3">
         <span className="hidden items-center gap-1.5 sm:flex">
           <span className="size-1.5 bg-up" />
           <span className="text-[10px] uppercase tracking-[0.12em] text-dim">
