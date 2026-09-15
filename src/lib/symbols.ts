@@ -43,3 +43,43 @@ export function normaliseSymbol(raw: string): string | null {
   if (!/^[A-Z0-9.\-^=]+$/.test(s)) return null;
   return s;
 }
+
+// --- Live market context ----------------------------------------------------
+// Shared with the client, so these live here rather than in `context.ts`,
+// which carries a `server-only` guard.
+
+export type Session = "pre" | "regular" | "post" | "closed";
+
+export type NewsItem = {
+  id: string;
+  title: string;
+  publisher: string;
+  link: string;
+  /** epoch ms */
+  publishedAt: number;
+  /** true when published after the last regular-session close */
+  afterClose: boolean;
+};
+
+export type MarketContext = {
+  symbol: string;
+  session: Session;
+  timezone: string;
+  regular: { price: number; changePct: number; at: number } | null;
+  extended: {
+    price: number;
+    changePct: number;
+    at: number;
+    session: "pre" | "post";
+  } | null;
+  /** move since the regular close, in percent — what the signal has not seen */
+  driftPct: number | null;
+  news: NewsItem[];
+};
+
+/**
+ * How big an extended-hours move has to be before the signal is flagged as
+ * stale. Below this it is daily noise; above it, the close the signal was
+ * built on is arguably no longer the right reference point.
+ */
+export const STALE_DRIFT_PCT = 2;

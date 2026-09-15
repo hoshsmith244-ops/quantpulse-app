@@ -12,6 +12,10 @@ import Link from "next/link";
 import * as React from "react";
 
 import { PriceWithTrades } from "@/components/charts/charts";
+import {
+  MarketContextPanel,
+  useMarketContext,
+} from "@/components/terminal/market-context";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { verdict, type AlphaResult, type FactorMeta } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
@@ -43,6 +47,9 @@ export function SimpleView({
   const v = verdict(result);
   const { signal, record, strategy } = result;
   const inPosition = signal.state === "in";
+  // Live extended-hours price and headlines. Presented next to the signal,
+  // never folded into it.
+  const context = useMarketContext(history.quote.symbol);
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 lg:p-6">
@@ -175,6 +182,8 @@ export function SimpleView({
           recommendation to buy or sell anything.
         </p>
       </Panel>
+
+      <MarketContextPanel context={context} />
 
       {/* ---- Should you trust it? ---- */}
       <Panel>

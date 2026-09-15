@@ -60,6 +60,26 @@ matter how much traffic it gets. If the provider is unreachable at build or
 revalidate time it falls back to describing the tool rather than showing numbers
 that were never true.
 
+## Live context sits beside the algorithm, never inside it
+
+The terminal also shows the extended-hours price and recent headlines, because
+a signal computed on the daily close cannot see an earnings release at 16:05.
+When the after-hours move exceeds 2%, the signal is flagged as possibly out of
+date.
+
+None of it touches the maths, for two reasons:
+
+- **No history to test against.** Yahoo returns roughly half a day of
+  headlines. There is nothing to fit or validate a news factor on across three
+  years of prices.
+- **It would be lookahead bias.** Mixing today.s news into a historical
+  simulation is the exact error the rest of the tool is built to detect.
+
+Headlines are labelled as context, not cause. A story published near a price
+move is a hypothesis; the interface says so rather than asserting a reason.
+Building a real news factor would need point-in-time historical news with
+timestamps and sentiment — a different data provider, not Yahoo.
+
 ## Two modes
 
 The terminal opens in **Simple** mode, which answers the question a newer
