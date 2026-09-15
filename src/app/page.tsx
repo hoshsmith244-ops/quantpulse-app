@@ -3,8 +3,15 @@ import Link from "next/link";
 
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
-import { Label, Panel, PanelHead, Tag } from "@/components/ui/terminal";
+import { LiveSample } from "@/components/landing/live-sample";
+import { Label, Tag } from "@/components/ui/terminal";
 import { FACTORS } from "@/lib/alpha";
+
+/**
+ * Prerendered, then refreshed hourly so the live sample tracks the market
+ * without costing a Yahoo call per visitor.
+ */
+export const revalidate = 3600;
 
 const STEPS = [
   {
@@ -87,48 +94,9 @@ export default function LandingPage() {
             Free · no account needed · real market data
           </p>
 
-          {/* Terminal sketch */}
+          {/* Live reading from the real engine */}
           <div className="mt-14 max-w-2xl">
-            <Panel>
-              <PanelHead
-                title="AAPL · momentum strategy"
-                right={<Tag tone="amber">sample</Tag>}
-              />
-              <div className="px-4 py-4">
-                <span className="label">The strategy says</span>
-                <div className="mt-2 text-[26px] leading-none text-up">
-                  HOLD
-                </div>
-                <p className="prose-face mt-3 text-[12px] leading-relaxed text-text">
-                  Bought <span className="text-bright">AAPL</span> on{" "}
-                  <span className="text-bright">3 Sep 2026</span> at{" "}
-                  <span className="tnum text-bright">328.21</span>, still
-                  holding. That position is{" "}
-                  <span className="text-up">+1.2%</span> so far.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-4">
-                {[
-                  ["Win rate", "57%", "text-bright"],
-                  ["Average win", "+3.1%", "text-up"],
-                  ["Average loss", "−2.9%", "text-down"],
-                  ["Typical hold", "19 days", "text-bright"],
-                ].map(([k, v, tone]) => (
-                  <div key={k} className="bg-panel px-3 py-2.5">
-                    <span className="label block truncate">{k}</span>
-                    <span className={`tnum mt-1 block text-[15px] ${tone}`}>
-                      {v}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <p className="prose-face border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-dim">
-                A real result from the tool. It also tells you this particular
-                strategy has{" "}
-                <span className="text-amber">no proven edge on Apple</span> —
-                which is more useful than a chart that only goes up.
-              </p>
-            </Panel>
+            <LiveSample />
           </div>
         </div>
       </section>

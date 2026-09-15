@@ -51,6 +51,15 @@ edge for an hour.
 cannot be bundled for the browser). Anything the client needs — the ticker list,
 shared types — lives in `src/lib/symbols.ts`.
 
+## The landing page reads live
+
+The hero panel on `/` is not a screenshot. It runs the real engine on AAPL at
+request time and prints the current signal, dated. The page is prerendered with
+`revalidate = 3600`, so it refreshes hourly and costs one Yahoo call an hour no
+matter how much traffic it gets. If the provider is unreachable at build or
+revalidate time it falls back to describing the tool rather than showing numbers
+that were never true.
+
 ## Two modes
 
 The terminal opens in **Simple** mode, which answers the question a newer
