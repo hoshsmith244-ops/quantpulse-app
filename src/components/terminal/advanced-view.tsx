@@ -16,6 +16,7 @@ import {
   Readout,
   Tag,
 } from "@/components/ui/terminal";
+import { CostControl } from "@/components/terminal/cost-control";
 import { TuningPanel } from "@/components/terminal/tuning-panel";
 import { getFactor, gradeIC, type AlphaResult } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
@@ -31,6 +32,8 @@ export function AdvancedView({
   bars,
   onApplyParam,
   sentimentMap,
+  costBps,
+  onCostChange,
 }: {
   result: AlphaResult;
   params: Params;
@@ -38,6 +41,8 @@ export function AdvancedView({
   bars: Bar[];
   onApplyParam: (param: number) => void;
   sentimentMap?: Map<string, number>;
+  costBps: number;
+  onCostChange: (bps: number) => void;
 }) {
   return (
     <>
@@ -155,6 +160,10 @@ export function AdvancedView({
           ))}
         </div>
 
+        <div className="border-t border-line px-3 py-2">
+          <CostControl costBps={costBps} onChange={onCostChange} />
+        </div>
+
         <p className="prose-face border-t border-line px-3 py-2 text-[11px] leading-relaxed text-dim">
           Long whenever the score sits in the top 40% of everything seen{" "}
           <em>up to that day</em>, flat otherwise. The threshold never uses
@@ -173,6 +182,7 @@ export function AdvancedView({
         currentParam={params.param}
         onApply={onApplyParam}
         sentimentMap={sentimentMap}
+        costBps={costBps}
       />
     </>
   );

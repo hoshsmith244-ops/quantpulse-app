@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { FACTORS, getFactor, type FactorId } from "./alpha";
+import { DEFAULT_COST_BPS, FACTORS, getFactor, type FactorId } from "./alpha";
 import { normaliseSymbol } from "./symbols";
 
 export type Params = {
@@ -10,6 +10,8 @@ export type Params = {
   factor: FactorId;
   param: number;
   horizon: number;
+  /** round-trip trading cost in basis points */
+  costBps: number;
 };
 
 export const DEFAULTS: Params = {
@@ -17,6 +19,7 @@ export const DEFAULTS: Params = {
   factor: "momentum",
   param: 126,
   horizon: 5,
+  costBps: DEFAULT_COST_BPS,
 };
 
 /**
@@ -64,7 +67,12 @@ function parse(raw: string | null): Params {
       ? Math.min(250, Math.max(1, Math.round(rawHorizon)))
       : DEFAULTS.horizon;
 
-    return { symbol, factor, param, horizon };
+    const rawCost = Number(v.costBps);
+    const costBps = Number.isFinite(rawCost)
+      ? Math.min(100, Math.max(0, rawCost))
+      : DEFAULT_COST_BPS;
+
+    return { symbol, factor, param, horizon, costBps };
   } catch {
     return DEFAULTS;
   }

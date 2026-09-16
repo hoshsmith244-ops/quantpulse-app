@@ -94,6 +94,8 @@ export function Workspace() {
             history={state.history}
             factor={meta}
             param={params.param}
+            costBps={params.costBps}
+            onCostChange={(bps) => set("costBps", bps)}
             context={context}
           />
         </div>
@@ -118,6 +120,8 @@ export function Workspace() {
               bars={state.history.bars}
               onApplyParam={(p) => set("param", p)}
               sentimentMap={sentimentMap}
+              costBps={params.costBps}
+              onCostChange={(bps) => set("costBps", bps)}
             />
           </div>
         </div>

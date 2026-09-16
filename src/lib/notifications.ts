@@ -3,7 +3,8 @@
 import * as React from "react";
 
 import { analyse, getFactor, type FactorId } from "./alpha";
-import type { History } from "./symbols";
+import { withProvisionalClose } from "./provisional";
+import type { History, MarketContext } from "./symbols";
 import type { WatchEntry } from "./watchlist";
 
 /**
@@ -41,6 +42,12 @@ export type SignalEvent = {
   /** when we noticed, epoch ms */
   at: number;
   read: boolean;
+  /**
+   * True for a pre-close alert: the rule WOULD trigger if today closed now.
+   * This is the actionable one — the settled event arrives after the close,
+   * by which time that price is gone.
+   */
+  provisional?: boolean;
 };
 
 type SignalState = Record<string, { state: "in" | "out"; since: string }>;
@@ -133,6 +140,16 @@ export function refreshStore() {
 const keyOf = (e: { symbol: string; factor: FactorId }) =>
   `${e.symbol}:${e.factor}`;
 
+async function loadContext(symbol: string): Promise<MarketContext | null> {
+  try {
+    const res = await fetch(`/api/context?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    return (await res.json()) as MarketContext;
+  } catch {
+    return null;
+  }
+}
+
 async function loadHistory(symbol: string): Promise<History | null> {
   try {
     const res = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}`);
@@ -167,7 +184,10 @@ export async function checkSignals(
       const entry = queue.shift();
       if (!entry) return;
 
-      const history = await loadHistory(entry.symbol);
+      const [history, context] = await Promise.all([
+        loadHistory(entry.symbol),
+        loadContext(entry.symbol),
+      ]);
       if (!history) continue;
 
       const result = analyse(history.bars, entry.factor, entry.param, 5);
@@ -183,6 +203,43 @@ export async function checkSignals(
           : (lastClosed?.exitDate ?? "");
 
       nextState[k] = { state: signal.state, since };
+
+      // Pre-close alert. While the session is still open, re-run the rule with
+      // the live price standing in for today's close: if it would flip, there
+      // is still time to act at the price the backtest assumes. Keyed by the
+      // day so it fires once, not every fifteen minutes.
+      const livePrice = context?.regular?.price;
+      const openNow =
+        context?.session === "regular" || context?.session === "pre";
+
+      if (openNow && livePrice) {
+        const provisionalBars = withProvisionalClose(
+          history.bars,
+          livePrice,
+          history.quote.timezone,
+        );
+        const provisional = analyse(
+          provisionalBars,
+          entry.factor,
+          entry.param,
+          5,
+        ).signal.state;
+
+        if (provisional !== signal.state) {
+          const today = provisionalBars[provisionalBars.length - 1].date;
+          fresh.push({
+            id: `${k}:pending-${provisional}:${today}`,
+            symbol: entry.symbol,
+            factor: entry.factor,
+            kind: provisional === "in" ? "entry" : "exit",
+            date: today,
+            price: livePrice,
+            at: Date.now(),
+            read: false,
+            provisional: true,
+          });
+        }
+      }
 
       const before = previous[k];
       // Only a genuine transition counts, and only one we have not already

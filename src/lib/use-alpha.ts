@@ -113,7 +113,7 @@ export function useAlpha() {
       deferred.factor,
       deferred.param,
       deferred.horizon,
-      { sentiment: sentimentMap },
+      { sentiment: sentimentMap, costBps: deferred.costBps },
     );
   }, [state, deferred, sentimentMap]);
 

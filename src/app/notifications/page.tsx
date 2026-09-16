@@ -204,6 +204,7 @@ function EventRow({ event }: { event: SignalEvent }) {
       className={cn(
         "flex items-start gap-3 px-4 py-3",
         !event.read && "bg-amber/[0.04]",
+        event.provisional && "border-l-2 border-amber",
       )}
     >
       <span
@@ -225,26 +226,45 @@ function EventRow({ event }: { event: SignalEvent }) {
         <span className="flex flex-wrap items-baseline gap-x-2">
           <span className="tnum text-[13px] text-bright">{event.symbol}</span>
           <span className={cn("text-[13px]", entered ? "text-up" : "text-down")}>
-            {entered ? "ENTERED" : "EXITED"}
+            {event.provisional
+              ? entered
+                ? "BUY AT CLOSE"
+                : "SELL AT CLOSE"
+              : entered
+                ? "ENTERED"
+                : "EXITED"}
           </span>
+          {event.provisional ? <Tag tone="amber">act today</Tag> : null}
           {!event.read ? <Tag tone="amber">new</Tag> : null}
         </span>
 
         <span className="prose-face mt-1 block text-[12px] leading-relaxed text-muted">
-          {meta.name} · {entered ? "bought" : "sold"} on{" "}
+          {event.provisional ? (
+            <>
+              {meta.name} · would {entered ? "enter" : "exit"} if today closed
+              near{" "}
+              <span className="tnum text-text">{event.price.toFixed(2)}</span>.
+              Send a market-on-close order before the bell to take that price.
+              Provisional — a late move can change it.
+            </>
+          ) : (
+            <>
+              {meta.name} · {entered ? "bought" : "sold"} on{" "}
           <span className="text-text">{prettyDate(event.date)}</span> at{" "}
           <span className="tnum text-text">{event.price.toFixed(2)}</span>
-          {event.returnPct !== undefined ? (
-            <>
-              {" "}
-              — closed{" "}
-              <span
-                className={event.returnPct >= 0 ? "text-up" : "text-down"}
-              >
-                {fmtPct(event.returnPct, 1)}
-              </span>
+              {event.returnPct !== undefined ? (
+                <>
+                  {" "}
+                  — closed{" "}
+                  <span
+                    className={event.returnPct >= 0 ? "text-up" : "text-down"}
+                  >
+                    {fmtPct(event.returnPct, 1)}
+                  </span>
+                </>
+              ) : null}
             </>
-          ) : null}
+          )}
         </span>
       </span>
 

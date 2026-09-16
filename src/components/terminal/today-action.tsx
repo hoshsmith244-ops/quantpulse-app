@@ -5,7 +5,7 @@ import * as React from "react";
 
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { analyse, type FactorId } from "@/lib/alpha";
-import type { Bar } from "@/lib/types";
+import { withProvisionalClose } from "@/lib/provisional";
 import type { History, MarketContext } from "@/lib/symbols";
 import { cn } from "@/lib/utils";
 
@@ -26,53 +26,6 @@ import { cn } from "@/lib/utils";
  * It is explicitly provisional. A move in the last ten minutes can flip it,
  * which is stated rather than hidden.
  */
-
-/** Today's date in the venue's timezone, matching how bars are dated. */
-function todayIn(tz: string) {
-  try {
-    return new Date().toLocaleDateString("en-CA", { timeZone: tz });
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-}
-
-/**
- * Replaces today's in-progress bar with the live price, or appends one if
- * Yahoo has not opened today's bar yet.
- */
-function withProvisionalClose(
-  bars: Bar[],
-  livePrice: number,
-  tz: string,
-): Bar[] {
-  const today = todayIn(tz);
-  const last = bars[bars.length - 1];
-  if (!last) return bars;
-
-  if (last.date === today) {
-    return [
-      ...bars.slice(0, -1),
-      {
-        ...last,
-        close: livePrice,
-        high: Math.max(last.high, livePrice),
-        low: Math.min(last.low, livePrice),
-      },
-    ];
-  }
-
-  return [
-    ...bars,
-    {
-      date: today,
-      open: livePrice,
-      high: livePrice,
-      low: livePrice,
-      close: livePrice,
-      volume: 0,
-    },
-  ];
-}
 
 export function TodayAction({
   history,

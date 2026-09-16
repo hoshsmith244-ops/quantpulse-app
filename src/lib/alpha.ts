@@ -197,7 +197,17 @@ const MOMENTUM_SKIP = 5;
 export type FactorInputs = {
   /** ISO date -> daily sentiment score, for the news factor */
   sentiment?: Map<string, number>;
+  /**
+   * Round-trip trading cost in basis points, charged half on entry and half
+   * on exit. Defaults to DEFAULT_COST_BPS rather than zero: free trading is
+   * the unrealistic assumption, and a high-turnover rule looks far better
+   * without it than it ever would in an account.
+   */
+  costBps?: number;
 };
+
+/** Commission plus half the spread on a liquid US name, round trip. */
+export const DEFAULT_COST_BPS = 10;
 
 export function computeFactor(
   bars: Bar[],
@@ -497,7 +507,11 @@ export function analyse(
   // Long whenever the score sits in the top two quintiles of its own history
   // to date. Threshold is computed from PAST scores only, so the rule is
   // tradeable rather than fitted with hindsight.
-  const { curve, stats, trades, record, signal } = simulate(bars, scores);
+  const { curve, stats, trades, record, signal } = simulate(
+    bars,
+    scores,
+    inputs.costBps ?? DEFAULT_COST_BPS,
+  );
 
   return {
     ic,
@@ -522,7 +536,14 @@ const WARMUP = 252;
 /** The rule goes long once the score ranks above this percentile of its history. */
 const ENTRY_PERCENTILE = 60;
 
-function simulate(bars: Bar[], scores: (number | null)[]) {
+function simulate(
+  bars: Bar[],
+  scores: (number | null)[],
+  costBps: number,
+) {
+  // Cost of a full round trip, split across the two transitions so an open
+  // position has already paid its entry side.
+  const sideCost = Math.max(0, costBps) / 10_000 / 2;
   const curve: CurvePoint[] = [];
   const seen: number[] = [];
   const trades: Trade[] = [];
@@ -576,6 +597,8 @@ function simulate(bars: Bar[], scores: (number | null)[]) {
         if (want !== inMarket) {
           flips++;
           lastFlipIndex = i;
+          // Crossing the spread costs the same going in or out.
+          equity *= 1 - sideCost;
           if (want) {
             entryIndex = i;
           } else if (entryIndex >= 0) {
@@ -585,7 +608,8 @@ function simulate(bars: Bar[], scores: (number | null)[]) {
               exitDate: bars[i].date,
               entryPrice: entry.close,
               exitPrice: bars[i].close,
-              returnPct: (bars[i].close / entry.close - 1) * 100,
+              returnPct:
+                (bars[i].close / entry.close - 1) * 100 - costBps / 100,
               barsHeld: i - entryIndex,
             });
             entryIndex = -1;
@@ -607,7 +631,8 @@ function simulate(bars: Bar[], scores: (number | null)[]) {
       exitDate: null,
       entryPrice: entry.close,
       exitPrice: null,
-      returnPct: (last.close / entry.close - 1) * 100,
+      returnPct:
+        (last.close / entry.close - 1) * 100 - costBps / 100,
       barsHeld: lastIndex - entryIndex,
     });
   }
@@ -802,7 +827,11 @@ export function evaluate(
   param: number,
   inputs: FactorInputs = {},
 ) {
-  return simulate(bars, computeFactor(bars, factorId, param, inputs));
+  return simulate(
+    bars,
+    computeFactor(bars, factorId, param, inputs),
+    inputs.costBps ?? DEFAULT_COST_BPS,
+  );
 }
 
 export type TuningRow = {

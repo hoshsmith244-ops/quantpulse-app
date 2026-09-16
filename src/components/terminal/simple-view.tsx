@@ -13,6 +13,7 @@ import * as React from "react";
 
 import { PriceWithTrades } from "@/components/charts/charts";
 import { MarketContextPanel } from "@/components/terminal/market-context";
+import { CostControl } from "@/components/terminal/cost-control";
 import { TodayAction } from "@/components/terminal/today-action";
 import { displayPrice } from "@/components/terminal/price-display";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
@@ -39,12 +40,16 @@ export function SimpleView({
   history,
   factor,
   param,
+  costBps,
+  onCostChange,
   context,
 }: {
   result: AlphaResult;
   history: History;
   factor: FactorMeta;
   param: number;
+  costBps: number;
+  onCostChange: (bps: number) => void;
   context: MarketContext | null;
 }) {
   const v = verdict(result);
@@ -209,7 +214,11 @@ export function SimpleView({
 
       {/* ---- Should you trust it? ---- */}
       <Panel>
-        <PanelHead title="Is this strategy any good on this stock?" />
+        <PanelHead
+          title="Is this strategy any good on this stock?"
+          className="flex-wrap gap-y-2"
+          right={<CostControl costBps={costBps} onChange={onCostChange} />}
+        />
         <div className="grid grid-cols-1 gap-px bg-line md:grid-cols-[1fr_320px]">
           <div className="bg-panel p-5">
             <div className="flex items-center gap-2.5">

@@ -31,18 +31,20 @@ export function TuningPanel({
   currentParam,
   onApply,
   sentimentMap,
+  costBps,
 }: {
   bars: Bar[];
   factor: FactorMeta;
   currentParam: number;
   onApply: (param: number) => void;
   sentimentMap?: Map<string, number>;
+  costBps: number;
 }) {
   const [result, setResult] = React.useState<Tuning | null>(null);
   const [running, setRunning] = React.useState(false);
 
   // Any change of asset or factor invalidates a previous run.
-  const key = `${factor.id}:${bars.length}:${bars[bars.length - 1]?.date ?? ""}`;
+  const key = `${factor.id}:${costBps}:${bars.length}:${bars[bars.length - 1]?.date ?? ""}`;
   const [prevKey, setPrevKey] = React.useState(key);
   if (key !== prevKey) {
     setPrevKey(key);
@@ -58,7 +60,10 @@ export function TuningPanel({
     setTimeout(() => {
       try {
         setResult(
-          tune(bars, factor.id, currentParam, { sentiment: sentimentMap }),
+          tune(bars, factor.id, currentParam, {
+            sentiment: sentimentMap,
+            costBps,
+          }),
         );
       } finally {
         setRunning(false);
