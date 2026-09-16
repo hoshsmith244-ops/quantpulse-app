@@ -132,6 +132,12 @@ export function SimpleView({
               )}
             </p>
 
+            <LastAction
+              inPosition={inPosition}
+              signal={signal}
+              trades={result.trades}
+            />
+
             {!inPosition && signal.proximityPct !== null ? (
               <div className="mt-5 max-w-sm">
                 <div className="flex items-baseline justify-between">
@@ -413,6 +419,69 @@ function Stat({
       <span className={cn("tnum mt-1.5 block text-[17px]", tones[tone])}>
         {value}
       </span>
+    </div>
+  );
+}
+
+/**
+ * The most recent entry or exit, stated outright.
+ *
+ * Previously a flat signal only said "sitting in cash", which never told you
+ * when it last sold or how that trade finished — the two things you most want
+ * to know when the answer is "do nothing".
+ */
+function LastAction({
+  inPosition,
+  signal,
+  trades,
+}: {
+  inPosition: boolean;
+  signal: AlphaResult["signal"];
+  trades: AlphaResult["trades"];
+}) {
+  const lastClosed = [...trades].reverse().find((t) => t.exitDate !== null);
+
+  const action = inPosition
+    ? signal.entryDate && signal.entryPrice
+      ? {
+          verb: "Bought",
+          date: signal.entryDate,
+          price: signal.entryPrice,
+          result: null as number | null,
+          tone: "text-up",
+          border: "border-up/40",
+        }
+      : null
+    : lastClosed?.exitDate
+      ? {
+          verb: "Sold",
+          date: lastClosed.exitDate,
+          price: lastClosed.exitPrice ?? 0,
+          result: lastClosed.returnPct,
+          tone: "text-down",
+          border: "border-down/40",
+        }
+      : null;
+
+  if (!action) return null;
+
+  return (
+    <div className={cn("mt-4 border-l-2 pl-3", action.border)}>
+      <span className="label">Last action</span>
+      <p className="prose-face mt-1 text-[12px] leading-relaxed text-text">
+        <span className={action.tone}>{action.verb}</span> on{" "}
+        <span className="text-bright">{prettyDate(action.date)}</span> at{" "}
+        <span className="tnum text-bright">{action.price.toFixed(2)}</span>
+        {action.result !== null ? (
+          <>
+            {" — that trade closed "}
+            <span className={action.result >= 0 ? "text-up" : "text-down"}>
+              {fmtPct(action.result, 1)}
+            </span>
+          </>
+        ) : null}
+        .
+      </p>
     </div>
   );
 }

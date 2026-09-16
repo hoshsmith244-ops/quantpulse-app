@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import { Logo } from "@/components/brand/logo";
+import { NotificationBell } from "@/components/shell/notification-bell";
+import { useSignalWatch } from "@/lib/use-signal-watch";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -16,6 +18,9 @@ const NAV = [
 
 /** Thin top chrome. The tool gets the screen; navigation stays out of the way. */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  // Keeps the bell meaningful on every page, not just the watchlist.
+  useSignalWatch();
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-base">
       <TopBar />
@@ -60,7 +65,8 @@ export function TopBar() {
         })}
       </nav>
 
-      <div className="ml-auto flex shrink-0 items-center gap-3">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <NotificationBell />
         <span className="hidden items-center gap-1.5 sm:flex">
           <span className="size-1.5 bg-up" />
           <span className="text-[10px] uppercase tracking-[0.12em] text-dim">
