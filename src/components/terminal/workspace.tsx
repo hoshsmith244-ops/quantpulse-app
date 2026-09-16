@@ -10,6 +10,8 @@ import {
   TickerBar,
 } from "@/components/terminal/controls";
 import { AdvancedView } from "@/components/terminal/advanced-view";
+import { useMarketContext } from "@/components/terminal/market-context";
+import { displayPrice } from "@/components/terminal/price-display";
 import { SimpleView } from "@/components/terminal/simple-view";
 import { getFactor } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
@@ -23,8 +25,15 @@ export function Workspace() {
   const meta = getFactor(params.factor);
 
   const [mode, setMode] = useMode();
+  // One poll shared by the header readout and the context panel below.
+  const context = useMarketContext(params.symbol);
 
   const quote = state.status === "ready" ? state.history.quote : null;
+
+  // Same source of truth as the price panel, so the header can never disagree
+  // with the figure shown below it.
+  const headline =
+    state.status === "ready" ? displayPrice(state.history, context) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -33,21 +42,21 @@ export function Workspace() {
         set={set}
         right={
           <>
-            {quote ? (
+{quote ? (
               <span className="hidden items-center gap-3 sm:flex">
                 <span className="tnum text-[12px] text-bright">
                   {quote.symbol}
-                  <span className="ml-2 text-dim">
-                    {quote.price.toFixed(2)}
+<span className="ml-2 text-dim">
+                    {headline?.value.toFixed(2)}
                   </span>
                 </span>
                 <span
                   className={cn(
                     "tnum text-[12px]",
-                    quote.changePct >= 0 ? "text-up" : "text-down",
+(headline?.changePct ?? 0) >= 0 ? "text-up" : "text-down",
                   )}
                 >
-                  {fmtPct(quote.changePct)}
+{fmtPct(headline?.changePct ?? 0)}
                 </span>
               </span>
             ) : null}
@@ -78,6 +87,7 @@ export function Workspace() {
             result={result}
             history={state.history}
             factor={meta}
+            context={context}
           />
         </div>
       ) : (

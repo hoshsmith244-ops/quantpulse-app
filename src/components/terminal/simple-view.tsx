@@ -12,14 +12,12 @@ import Link from "next/link";
 import * as React from "react";
 
 import { PriceWithTrades } from "@/components/charts/charts";
-import {
-  MarketContextPanel,
-  useMarketContext,
-} from "@/components/terminal/market-context";
+import { MarketContextPanel } from "@/components/terminal/market-context";
+import { displayPrice } from "@/components/terminal/price-display";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { verdict, type AlphaResult, type FactorMeta } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
-import type { History } from "@/lib/symbols";
+import type { History, MarketContext } from "@/lib/symbols";
 import { cn } from "@/lib/utils";
 
 const prettyDate = (iso: string) =>
@@ -39,17 +37,25 @@ export function SimpleView({
   result,
   history,
   factor,
+  context,
 }: {
   result: AlphaResult;
   history: History;
   factor: FactorMeta;
+  context: MarketContext | null;
 }) {
   const v = verdict(result);
   const { signal, record, strategy } = result;
   const inPosition = signal.state === "in";
-  // Live extended-hours price and headlines. Presented next to the signal,
-  // never folded into it.
-  const context = useMarketContext(history.quote.symbol);
+  const price = displayPrice(history, context);
+
+  // Mark an open position to the live price rather than the last daily bar,
+  // which can be a session behind. The engine's own figure is used only when
+  // no live quote is available.
+  const openPct =
+    signal.entryPrice && price.isLive
+      ? (price.value / signal.entryPrice - 1) * 100
+      : signal.openReturnPct;
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 lg:p-6">
@@ -106,15 +112,11 @@ export function SimpleView({
                     {signal.entryPrice?.toFixed(2)}
                   </span>{" "}
                   and would still be holding it.{" "}
-                  {signal.openReturnPct !== null ? (
+                  {openPct !== null ? (
                     <>
                       That position is{" "}
-                      <span
-                        className={
-                          signal.openReturnPct >= 0 ? "text-up" : "text-down"
-                        }
-                      >
-                        {fmtPct(signal.openReturnPct, 1)}
+                      <span className={openPct >= 0 ? "text-up" : "text-down"}>
+                        {fmtPct(openPct, 1)}
                       </span>{" "}
                       so far.
                     </>
@@ -154,9 +156,9 @@ export function SimpleView({
 
           {/* Price snapshot */}
           <div className="bg-panel p-5">
-            <span className="label">{history.quote.symbol} right now</span>
+            <span className="label">{price.label}</span>
             <div className="tnum mt-3 text-[26px] leading-none text-bright">
-              {history.quote.price.toFixed(2)}
+              {price.value.toFixed(2)}
               <span className="ml-1.5 text-[13px] text-dim">
                 {history.quote.currency}
               </span>
@@ -164,14 +166,17 @@ export function SimpleView({
             <div
               className={cn(
                 "tnum mt-2 text-[14px]",
-                history.quote.changePct >= 0 ? "text-up" : "text-down",
+                price.changePct >= 0 ? "text-up" : "text-down",
               )}
             >
-              {fmtPct(history.quote.changePct)} today
+              {fmtPct(price.changePct)} {price.changeLabel}
             </div>
             <p className="prose-face mt-4 border-t border-line pt-3 text-[11px] leading-relaxed text-dim">
               {history.quote.name}
               {history.quote.exchange ? ` · ${history.quote.exchange}` : ""}
+            </p>
+            <p className="prose-face mt-1.5 text-[11px] leading-relaxed text-faint">
+              {price.note}
             </p>
           </div>
         </div>

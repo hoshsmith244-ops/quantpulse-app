@@ -4,20 +4,15 @@ import * as React from "react";
 
 import { analyse, getFactor, type AlphaResult, type FactorId } from "./alpha";
 import type { History, SentimentSeries } from "./symbols";
+import {
+  usePersistedParams,
+  DEFAULTS,
+  type Params,
+} from "./use-persisted-params";
 
-export type Params = {
-  symbol: string;
-  factor: FactorId;
-  param: number;
-  horizon: number;
-};
-
-export const DEFAULTS: Params = {
-  symbol: "AAPL",
-  factor: "momentum",
-  param: 126,
-  horizon: 5,
-};
+// Re-exported so existing imports of Params/DEFAULTS keep working.
+export { DEFAULTS };
+export type { Params };
 
 /** What came back for one symbol. */
 type Loaded =
@@ -38,11 +33,9 @@ export type State =
  * the effect. That keeps the effect to a single state write, in its async
  * callback, where it belongs.
  */
-export function useAlpha(initial: Partial<Params> = {}) {
-  const [params, setParams] = React.useState<Params>({
-    ...DEFAULTS,
-    ...initial,
-  });
+export function useAlpha() {
+  // Persisted, so leaving for the guide and coming back keeps your ticker.
+  const [params, setParams] = usePersistedParams();
   const [loaded, setLoaded] = React.useState<Loaded | null>(null);
   const [sentiment, setSentiment] = React.useState<SentimentSeries | null>(null);
 
@@ -134,7 +127,7 @@ export function useAlpha(initial: Partial<Params> = {}) {
         return { ...prev, factor: value as FactorId, param: meta.def };
       });
     },
-    [],
+    [setParams],
   );
 
   return {
