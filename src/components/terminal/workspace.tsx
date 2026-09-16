@@ -12,6 +12,7 @@ import {
 import { AdvancedView } from "@/components/terminal/advanced-view";
 import { useMarketContext } from "@/components/terminal/market-context";
 import { displayPrice } from "@/components/terminal/price-display";
+import { WatchButton } from "@/components/terminal/watch-button";
 import { SimpleView } from "@/components/terminal/simple-view";
 import { getFactor } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
@@ -63,6 +64,11 @@ export function Workspace() {
             {state.status === "loading" || computing ? (
               <Loader2 className="size-3.5 animate-spin text-amber" />
             ) : null}
+<WatchButton
+              symbol={params.symbol}
+              factor={params.factor}
+              param={params.param}
+            />
             <ModeToggle mode={mode} onChange={setMode} />
           </>
         }

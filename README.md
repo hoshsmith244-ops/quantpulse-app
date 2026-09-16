@@ -80,6 +80,23 @@ move is a hypothesis; the interface says so rather than asserting a reason.
 Building a real news factor would need point-in-time historical news with
 timestamps and sentiment — a different data provider, not Yahoo.
 
+## Watchlist
+
+`/watchlist` scans every ticker you save in one pass and reports which are
+signalling now, how long they have been in that state, and whether the signal
+has any evidence behind it.
+
+Each row carries its own strategy, not just a ticker. That is the point: a
+factor that works on one name usually does not work on another, so a watchlist
+of bare tickers would throw away the conclusion the research surface exists to
+reach. The Watch button in the terminal saves whatever you are currently
+looking at, strategy included, and clicking a row opens it back up with that
+preset loaded.
+
+Fetches are pooled six at a time and each ticker is edge-cached for an hour;
+measured at roughly 210ms to fetch eight cold tickers and 18ms per ticker to
+analyse.
+
 ## Two modes
 
 The terminal opens in **Simple** mode, which answers the question a newer
