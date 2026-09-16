@@ -13,6 +13,7 @@ import * as React from "react";
 
 import { PriceWithTrades } from "@/components/charts/charts";
 import { MarketContextPanel } from "@/components/terminal/market-context";
+import { TodayAction } from "@/components/terminal/today-action";
 import { displayPrice } from "@/components/terminal/price-display";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { verdict, type AlphaResult, type FactorMeta } from "@/lib/alpha";
@@ -37,11 +38,13 @@ export function SimpleView({
   result,
   history,
   factor,
+  param,
   context,
 }: {
   result: AlphaResult;
   history: History;
   factor: FactorMeta;
+  param: number;
   context: MarketContext | null;
 }) {
   const v = verdict(result);
@@ -193,6 +196,14 @@ export function SimpleView({
           recommendation to buy or sell anything.
         </p>
       </Panel>
+
+      <TodayAction
+        history={history}
+        context={context}
+        factor={factor.id}
+        param={param}
+        currentState={signal.state}
+      />
 
       <MarketContextPanel context={context} />
 

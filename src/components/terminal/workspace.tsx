@@ -93,6 +93,7 @@ export function Workspace() {
             result={result}
             history={state.history}
             factor={meta}
+            param={params.param}
             context={context}
           />
         </div>
