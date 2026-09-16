@@ -46,13 +46,28 @@ export async function fetchHistory(
     throw new SymbolNotFound(symbol);
   }
 
+  // A daily bar is a session in the VENUE's timezone, not the viewer's and not
+  // UTC. Yahoo stamps US equity bars at 13:30 UTC (09:30 New York) and crypto
+  // bars at 00:00 UTC, so slicing the UTC string happens to work for US stocks
+  // and is wrong for anything whose session straddles midnight UTC — crypto
+  // reads a day ahead for a US viewer, and Asian listings would misdate too.
+  const exchangeTz = res.meta.exchangeTimezoneName || "UTC";
+  const barDate = (d: Date) => {
+    try {
+      // en-CA renders as YYYY-MM-DD.
+      return d.toLocaleDateString("en-CA", { timeZone: exchangeTz });
+    } catch {
+      return d.toISOString().slice(0, 10);
+    }
+  };
+
   const bars: Bar[] = res.quotes
     .filter(
       (q) =>
         q.close != null && q.open != null && q.high != null && q.low != null,
     )
     .map((q) => ({
-      date: new Date(q.date).toISOString().slice(0, 10),
+      date: barDate(new Date(q.date)),
       open: q.open as number,
       high: q.high as number,
       low: q.low as number,
@@ -72,6 +87,7 @@ export async function fetchHistory(
       name: res.meta.longName ?? res.meta.shortName ?? symbol,
       currency: res.meta.currency ?? "USD",
       exchange: res.meta.fullExchangeName ?? res.meta.exchangeName ?? "",
+      timezone: exchangeTz,
       price: last.close,
       changePct: ((last.close - prev.close) / prev.close) * 100,
     },

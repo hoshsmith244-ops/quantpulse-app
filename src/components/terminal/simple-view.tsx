@@ -286,8 +286,15 @@ export function SimpleView({
           <PanelHead
             title="Its last few trades"
             right={
-              <span className="tnum text-[11px] text-dim">
-                {record.completed} completed
+              <span className="flex items-center gap-3">
+                {/* Crypto bars are dated in UTC, which can read a day ahead of
+                    a US clock, so the zone is named rather than assumed. */}
+                <span className="text-[10px] uppercase tracking-[0.1em] text-faint">
+                  dates in {history.quote.timezone}
+                </span>
+                <span className="tnum text-[11px] text-dim">
+                  {record.completed} completed
+                </span>
               </span>
             }
           />

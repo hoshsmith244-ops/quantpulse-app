@@ -13,6 +13,8 @@ export type Quote = {
   name: string;
   currency: string;
   exchange: string;
+  /** IANA zone the daily bars are dated in, e.g. America/New_York or UTC */
+  timezone: string;
   /** most recent close */
   price: number;
   /** change vs the previous close, in percent */
