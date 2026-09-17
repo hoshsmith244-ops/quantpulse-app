@@ -252,12 +252,24 @@ export default function GuidePage() {
               </li>
             </ul>
             <p>
-              Company filters — sector, market cap, P/E — narrow{" "}
+              Company filters — sector, industry, market cap, P/E, dividend,
+              profitability, revenue growth — narrow{" "}
               <em>which names you look at</em>. They are today&apos;s figures and
               are never fed into the backtest: today&apos;s P/E did not exist
               three years ago, so scoring a three-year simulation with it would
               be the plainest kind of cheating. Use them to search a corner of
               the market you understand, not to explain a result.
+            </p>
+            <p>
+              <Term>Liquidity deserves more attention than any of them.</Term>{" "}
+              Every result on this site charges a flat 10 basis points a round
+              trip, which is a fair assumption for a stock that trades heavily
+              and a fantasy for one that does not. On a name turning over less
+              than roughly $10M a day the real spread is wider than the cost
+              being modelled, so the edge on screen is partly an accounting
+              fiction. The screener shows daily dollar volume and turns it amber
+              when it is thin — treat those rows as ideas to investigate, never
+              as results.
             </p>
             <p>
               A last warning that the numbers will not give you. Most of what

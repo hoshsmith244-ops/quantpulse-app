@@ -29,11 +29,21 @@ export type ScreenTicker = {
   divYield: number | null;
   beta: number | null;
   priceToBook: number | null;
+  priceToSales: number | null;
+  debtToEquity: number | null;
   /** percent */
   profitMargin: number | null;
   /** percent */
   revenueGrowth: number | null;
+  /** percent of float sold short */
+  shortPctFloat: number | null;
   avgVolume: number | null;
+  /** average daily traded value in dollars */
+  dollarVolume: number | null;
+  /** annualised standard deviation of daily returns, percent */
+  volatility: number | null;
+  /** percent below the 52-week high */
+  from52wHigh: number | null;
   price: number;
   bars: number;
 };
@@ -122,21 +132,79 @@ export const VERDICT_LABELS: Record<VerdictLevel, string> = {
   weak: "No real edge",
 };
 
+export type LiquidityBucket = "high" | "medium" | "low";
+
+export const LIQUIDITY_LABELS: Record<LiquidityBucket, string> = {
+  high: "Heavy · over $100M a day",
+  medium: "Moderate · $10–100M a day",
+  low: "Thin · under $10M a day",
+};
+
+/**
+ * Liquidity matters more here than any valuation ratio.
+ *
+ * Every backtest on this page charges a flat 10 bps round trip, which is only
+ * honest on a name that actually trades. Below roughly $10M a day the real
+ * spread is wider than the modelled cost, so the edge shown is partly fiction.
+ */
+export function liquidityBucket(dollarVolume: number | null): LiquidityBucket | null {
+  if (dollarVolume === null) return null;
+  if (dollarVolume >= 100e6) return "high";
+  if (dollarVolume >= 10e6) return "medium";
+  return "low";
+}
+
+export type VolBucket = "calm" | "normal" | "wild";
+
+export const VOL_LABELS: Record<VolBucket, string> = {
+  calm: "Calm · under 20%",
+  normal: "Normal · 20–40%",
+  wild: "Wild · over 40%",
+};
+
+export function volBucket(volatility: number | null): VolBucket | null {
+  if (volatility === null) return null;
+  if (volatility < 20) return "calm";
+  if (volatility < 40) return "normal";
+  return "wild";
+}
+
+/** Sample-size floors offered in the picker. */
+export const TRADE_FLOORS = [0, 10, 20, 50] as const;
+
 // ---------------------------------------------------------------------------
 // Filters
 // ---------------------------------------------------------------------------
 
 export type Filters = {
+  // --- What the backtest found -------------------------------------------
   verdict: VerdictLevel | "all";
   factor: FactorId | "all";
   /** survives a 25 bps cost and a parameter shift either way */
   robust: boolean;
+  state: "all" | "in" | "out";
+  /** minimum completed trades — a guard against tiny samples */
+  minTrades: number;
+  /** only rows whose out-of-sample result also beat buy & hold */
+  oos: "all" | "beat";
+  /** exclude strategies that beat holding while still losing money */
+  profitableOnly: boolean;
+
+  // --- The company --------------------------------------------------------
+  sector: string;
+  industry: string;
   cap: CapBucket | "all";
   pe: PeBucket | "none" | "all";
-  sector: string;
   dividend: "all" | "pays" | "over2";
+  earnings: "all" | "profitable" | "unprofitable";
+  growth: "all" | "growing" | "shrinking";
+
+  // --- Risk and tradeability ---------------------------------------------
+  liquidity: LiquidityBucket | "all";
+  volatility: VolBucket | "all";
   beta: "all" | "under1" | "over1";
-  state: "all" | "in" | "out";
+  shortInterest: "all" | "heavy";
+
   /** free-text ticker or company match */
   q: string;
 };
@@ -145,12 +213,21 @@ export const DEFAULT_FILTERS: Filters = {
   verdict: "promising",
   factor: "all",
   robust: true,
+  state: "all",
+  minTrades: 0,
+  oos: "all",
+  profitableOnly: false,
+  sector: "all",
+  industry: "all",
   cap: "all",
   pe: "all",
-  sector: "all",
   dividend: "all",
+  earnings: "all",
+  growth: "all",
+  liquidity: "all",
+  volatility: "all",
   beta: "all",
-  state: "all",
+  shortInterest: "all",
   q: "",
 };
 
@@ -165,14 +242,20 @@ export type FilterResult = {
   unknown: number;
 };
 
-/** True when any fundamental filter is doing work. */
+/** True when any company or risk filter is doing work. */
 export function hasFundamentalFilter(f: Filters) {
   return (
     f.cap !== "all" ||
     f.pe !== "all" ||
     f.sector !== "all" ||
+    f.industry !== "all" ||
     f.dividend !== "all" ||
-    f.beta !== "all"
+    f.earnings !== "all" ||
+    f.growth !== "all" ||
+    f.liquidity !== "all" ||
+    f.volatility !== "all" ||
+    f.beta !== "all" ||
+    f.shortInterest !== "all"
   );
 }
 
@@ -181,12 +264,21 @@ export function countActive(f: Filters) {
   if (f.verdict !== DEFAULT_FILTERS.verdict) n++;
   if (f.factor !== "all") n++;
   if (!f.robust) n++;
+  if (f.state !== "all") n++;
+  if (f.minTrades > 0) n++;
+  if (f.oos !== "all") n++;
+  if (f.profitableOnly) n++;
+  if (f.sector !== "all") n++;
+  if (f.industry !== "all") n++;
   if (f.cap !== "all") n++;
   if (f.pe !== "all") n++;
-  if (f.sector !== "all") n++;
   if (f.dividend !== "all") n++;
+  if (f.earnings !== "all") n++;
+  if (f.growth !== "all") n++;
+  if (f.liquidity !== "all") n++;
+  if (f.volatility !== "all") n++;
   if (f.beta !== "all") n++;
-  if (f.state !== "all") n++;
+  if (f.shortInterest !== "all") n++;
   if (f.q.trim()) n++;
   return n;
 }
@@ -199,10 +291,23 @@ export function applyFilters(data: ScreenData, f: Filters): FilterResult {
     const t = data.tickers[r.s];
     if (!t) return false;
 
+    // --- The backtest ------------------------------------------------------
     if (f.verdict !== "all" && r.lvl !== f.verdict) return false;
     if (f.factor !== "all" && r.f !== f.factor) return false;
     if (f.state !== "all" && r.state !== f.state) return false;
     if (f.robust && !(r.costOk && r.nbrOk)) return false;
+    if (f.minTrades > 0 && r.n < f.minTrades) return false;
+    // Beating a stock that fell is not a profit, even when the edge is large.
+    if (f.profitableOnly && r.ret <= 0) return false;
+
+    if (f.oos === "beat") {
+      // Only computed where it is meaningful; unknown never counts as a pass.
+      if (r.oos === null || r.oosBh === null) {
+        unknown++;
+        return false;
+      }
+      if (r.oos <= r.oosBh) return false;
+    }
 
     if (q && !r.s.includes(q) && !t.name.toUpperCase().includes(q)) {
       return false;
@@ -251,6 +356,51 @@ export function applyFilters(data: ScreenData, f: Filters): FilterResult {
       if (f.dividend === "over2" && t.divYield < 2) return false;
     }
 
+    if (f.industry !== "all") {
+      if (t.industry === null) {
+        unknown++;
+        return false;
+      }
+      if (t.industry !== f.industry) return false;
+    }
+
+    if (f.earnings !== "all") {
+      if (t.profitMargin === null) {
+        unknown++;
+        return false;
+      }
+      if (f.earnings === "profitable" && t.profitMargin <= 0) return false;
+      if (f.earnings === "unprofitable" && t.profitMargin > 0) return false;
+    }
+
+    if (f.growth !== "all") {
+      if (t.revenueGrowth === null) {
+        unknown++;
+        return false;
+      }
+      if (f.growth === "growing" && t.revenueGrowth <= 0) return false;
+      if (f.growth === "shrinking" && t.revenueGrowth > 0) return false;
+    }
+
+    // --- Risk and tradeability ---------------------------------------------
+    if (f.liquidity !== "all") {
+      const b = liquidityBucket(t.dollarVolume);
+      if (b === null) {
+        unknown++;
+        return false;
+      }
+      if (b !== f.liquidity) return false;
+    }
+
+    if (f.volatility !== "all") {
+      const b = volBucket(t.volatility);
+      if (b === null) {
+        unknown++;
+        return false;
+      }
+      if (b !== f.volatility) return false;
+    }
+
     if (f.beta !== "all") {
       if (t.beta === null) {
         unknown++;
@@ -258,6 +408,14 @@ export function applyFilters(data: ScreenData, f: Filters): FilterResult {
       }
       if (f.beta === "under1" && t.beta >= 1) return false;
       if (f.beta === "over1" && t.beta < 1) return false;
+    }
+
+    if (f.shortInterest === "heavy") {
+      if (t.shortPctFloat === null) {
+        unknown++;
+        return false;
+      }
+      if (t.shortPctFloat < 10) return false;
     }
 
     return true;
@@ -286,11 +444,62 @@ export function sortRows(rows: ScreenRow[], key: SortKey): ScreenRow[] {
   });
 }
 
+/**
+ * How many tickers fall in each bucket, for the pickers.
+ *
+ * Shown beside every option so an empty slice is visible before it is chosen.
+ * A filter that silently returns nothing reads as broken; "Mid · $2–10B (0)"
+ * reads as an honest gap in the universe.
+ *
+ * Counted over tickers rather than rows, and unconditioned by the other
+ * filters — it answers "does this slice exist at all", not "what would I get
+ * given everything else I have set".
+ */
+export type BucketCounts = {
+  cap: Record<string, number>;
+  pe: Record<string, number>;
+  liquidity: Record<string, number>;
+  volatility: Record<string, number>;
+};
+
+export function bucketCounts(data: ScreenData): BucketCounts {
+  const counts: BucketCounts = { cap: {}, pe: {}, liquidity: {}, volatility: {} };
+  const bump = (m: Record<string, number>, k: string | null) => {
+    if (k) m[k] = (m[k] ?? 0) + 1;
+  };
+
+  for (const t of Object.values(data.tickers)) {
+    bump(counts.cap, capBucket(t.marketCap));
+    bump(counts.pe, peBucket(t.pe));
+    if (t.pe === null && t.kind === "EQUITY") bump(counts.pe, "none");
+    bump(counts.liquidity, liquidityBucket(t.dollarVolume));
+    bump(counts.volatility, volBucket(t.volatility));
+  }
+
+  return counts;
+}
+
 /** Sectors present in the data, sorted, for the picker. */
 export function sectorsOf(data: ScreenData): string[] {
   const set = new Set<string>();
   for (const t of Object.values(data.tickers)) {
     if (t.sector) set.add(t.sector);
+  }
+  return [...set].sort();
+}
+
+/**
+ * Industries, narrowed to the chosen sector.
+ *
+ * Offering all ~90 industries at once would be a wall of options, most of
+ * which return nothing once a sector is set.
+ */
+export function industriesOf(data: ScreenData, sector: string): string[] {
+  const set = new Set<string>();
+  for (const t of Object.values(data.tickers)) {
+    if (!t.industry) continue;
+    if (sector !== "all" && t.sector !== sector) continue;
+    set.add(t.industry);
   }
   return [...set].sort();
 }

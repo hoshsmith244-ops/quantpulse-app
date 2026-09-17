@@ -1,6 +1,17 @@
 "use client";
 
-import { ArrowRight, Info, Loader2, RotateCcw, Search, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Coins,
+  Info,
+  Loader2,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -14,21 +25,29 @@ import { fmtInt, fmtPct } from "@/lib/format";
 import {
   CAP_LABELS,
   DEFAULT_FILTERS,
+  LIQUIDITY_LABELS,
   PE_LABELS,
+  TRADE_FLOORS,
   VERDICT_LABELS,
+  VOL_LABELS,
   applyFilters,
+  bucketCounts,
   countActive,
   fmtCap,
   hasFundamentalFilter,
+  industriesOf,
+  liquidityBucket,
   sectorsOf,
   sortRows,
   type CapBucket,
   type Filters,
+  type LiquidityBucket,
   type PeBucket,
   type ScreenData,
   type ScreenRow,
   type SortKey,
   type VerdictLevel,
+  type VolBucket,
 } from "@/lib/screen";
 import { useMode } from "@/lib/use-mode";
 import { usePersistedParams } from "@/lib/use-persisted-params";
@@ -46,6 +65,8 @@ export function ScreenerView() {
   const [filters, setFilters] = React.useState<Filters>(DEFAULT_FILTERS);
   const [sort, setSort] = React.useState<SortKey>("edge");
   const [limit, setLimit] = React.useState(PAGE);
+  /** The long tail of filters stays folded away until asked for. */
+  const [more, setMore] = React.useState(false);
 
   // Typing in the search box re-filters a thousand rows; deferring it keeps
   // the keystrokes smooth and lets the table catch up a frame later.
@@ -58,23 +79,30 @@ export function ScreenerView() {
 
   /**
    * Simple mode is not a different dataset, only a narrower set of questions.
-   * The two filters it hides are the two that need a statistician to use
-   * safely, so they are pinned to their careful values rather than left at
-   * whatever the user last picked in advanced mode.
+   * Everything it hides is pinned to a careful default rather than left at
+   * whatever was last picked in advanced mode.
+   *
+   * `verdict` is deliberately NOT pinned: it starts at "worth a closer look"
+   * but simple mode can still widen it through the link under the results.
+   * Locking it outright would leave a whole class of user unable to see how
+   * often these strategies fail, which is the one thing this app exists to
+   * show.
    */
   const effective: Filters = React.useMemo(
     () =>
       advanced
         ? { ...filters, q: deferredQ }
         : {
-            ...filters,
+            ...DEFAULT_FILTERS,
             q: deferredQ,
-            verdict: "promising",
-            robust: true,
-            factor: "all",
-            dividend: "all",
-            beta: "all",
-            state: "all",
+            // `verdict` and `robust` travel together: the escape hatch below
+            // drops both, because showing "everything" with the stress test
+            // still on would show 103 of 1,030 and call it the base rate.
+            verdict: filters.verdict,
+            robust: filters.robust,
+            sector: filters.sector,
+            cap: filters.cap,
+            pe: filters.pe,
           },
     [advanced, filters, deferredQ],
   );
@@ -86,6 +114,13 @@ export function ScreenerView() {
 
   const sorted = React.useMemo(() => sortRows(rows, sort), [rows, sort]);
   const sectors = React.useMemo(() => (data ? sectorsOf(data) : []), [data]);
+  const industries = React.useMemo(
+    () => (data ? industriesOf(data, filters.sector) : []),
+    [data, filters.sector],
+  );
+  // Ticker counts per bucket, so an empty slice announces itself in the
+  // dropdown instead of silently returning nothing.
+  const counts = React.useMemo(() => (data ? bucketCounts(data) : null), [data]);
   const activeCount = countActive(effective);
 
   if (error) {
@@ -135,7 +170,7 @@ export function ScreenerView() {
         />
 
         <div className="space-y-3 p-3">
-          {/* What the strategy did — the part that is actually backtested. */}
+          {/* Always visible: search, and the questions everyone asks. */}
           <div className="flex flex-wrap items-end gap-2.5">
             <Field label="Search">
               <span className="relative flex items-center">
@@ -150,20 +185,89 @@ export function ScreenerView() {
               </span>
             </Field>
 
+            <Field label="Sector">
+              <Select
+                value={filters.sector}
+                onChange={(v) => {
+                  // Industries are scoped to the sector, so a stale industry
+                  // would silently return nothing.
+                  setFilters((f) => ({ ...f, sector: v, industry: "all" }));
+                  setLimit(PAGE);
+                }}
+                options={[
+                  { value: "all", label: "Any sector" },
+                  ...sectors.map((s) => ({ value: s, label: s })),
+                ]}
+              />
+            </Field>
+
+            <Field label="Market cap">
+              <Select
+                value={filters.cap}
+                onChange={(v) => set("cap", v as CapBucket | "all")}
+                options={[
+                  { value: "all", label: "Any size" },
+                  ...(Object.keys(CAP_LABELS) as CapBucket[]).map((c) => ({
+                    value: c,
+                    label: `${CAP_LABELS[c]} (${counts?.cap[c] ?? 0})`,
+                  })),
+                ]}
+              />
+            </Field>
+
+            <Field label="P/E ratio">
+              <Select
+                value={filters.pe}
+                onChange={(v) => set("pe", v as PeBucket | "none" | "all")}
+                options={[
+                  { value: "all", label: "Any P/E" },
+                  ...(Object.keys(PE_LABELS) as PeBucket[]).map((p) => ({
+                    value: p,
+                    label: `${PE_LABELS[p]} (${counts?.pe[p] ?? 0})`,
+                  })),
+                  {
+                    value: "none",
+                    label: `No earnings (${counts?.pe.none ?? 0})`,
+                  },
+                ]}
+              />
+            </Field>
+
             {advanced ? (
-              <>
+              <button
+                onClick={() => setMore((m) => !m)}
+                className="flex h-8 items-center gap-1.5 border border-edge px-2.5 text-[12px] text-muted transition-colors hover:border-amber hover:text-amber"
+              >
+                <SlidersHorizontal className="size-3.5" />
+                {more ? "Fewer filters" : "More filters"}
+                {more ? (
+                  <ChevronUp className="size-3" />
+                ) : (
+                  <ChevronDown className="size-3" />
+                )}
+              </button>
+            ) : null}
+          </div>
+
+          {advanced && more ? (
+            <>
+              {/* --- What the backtest found -------------------------------- */}
+              <FilterGroup
+                title="The strategy"
+                hint="Measured from price alone, with no lookahead."
+              >
                 <Field label="Verdict">
                   <Select
                     value={filters.verdict}
                     onChange={(v) => set("verdict", v as VerdictLevel | "all")}
                     options={[
-                      { value: "all", label: "Any verdict" },
-                      ...(
-                        ["promising", "mixed", "inverted", "weak"] as const
-                      ).map((v) => ({
-                        value: v,
-                        label: `${VERDICT_LABELS[v]} (${data.counts[v] ?? 0})`,
-                      })),
+                      { value: "all", label: `Any verdict (${data.pairs})` },
+                      ...(["promising", "mixed", "inverted", "weak"] as const).map(
+                        (v) => ({
+                          value: v,
+                          label: `${VERDICT_LABELS[v]} (${data.counts[v] ?? 0})`,
+                        }),
+                      ),
                     ]}
                   />
                 </Field>
@@ -193,53 +297,70 @@ export function ScreenerView() {
                     ]}
                   />
                 </Field>
-              </>
-            ) : null}
-          </div>
 
-          {/* Fundamentals — a filter on the universe, not on the backtest. */}
-          <div className="flex flex-wrap items-end gap-2.5 border-t border-line-soft pt-3">
-            <Field label="Sector">
-              <Select
-                value={filters.sector}
-                onChange={(v) => set("sector", v)}
-                options={[
-                  { value: "all", label: "Any sector" },
-                  ...sectors.map((s) => ({ value: s, label: s })),
-                ]}
-              />
-            </Field>
+                <Field label="Sample size">
+                  <Select
+                    value={String(filters.minTrades)}
+                    onChange={(v) => set("minTrades", Number(v))}
+                    options={TRADE_FLOORS.map((n) => ({
+                      value: String(n),
+                      label: n === 0 ? "Any number of trades" : `${n}+ trades`,
+                    }))}
+                  />
+                </Field>
 
-            <Field label="Market cap">
-              <Select
-                value={filters.cap}
-                onChange={(v) => set("cap", v as CapBucket | "all")}
-                options={[
-                  { value: "all", label: "Any size" },
-                  ...(
-                    Object.keys(CAP_LABELS) as CapBucket[]
-                  ).map((c) => ({ value: c, label: CAP_LABELS[c] })),
-                ]}
-              />
-            </Field>
+                <Field label="Out of sample">
+                  <Select
+                    value={filters.oos}
+                    onChange={(v) => set("oos", v as Filters["oos"])}
+                    options={[
+                      { value: "all", label: "Any" },
+                      { value: "beat", label: "Also beat holding" },
+                    ]}
+                  />
+                </Field>
+              </FilterGroup>
 
-            <Field label="P/E ratio">
-              <Select
-                value={filters.pe}
-                onChange={(v) => set("pe", v as PeBucket | "none" | "all")}
-                options={[
-                  { value: "all", label: "Any P/E" },
-                  ...(Object.keys(PE_LABELS) as PeBucket[]).map((p) => ({
-                    value: p,
-                    label: PE_LABELS[p],
-                  })),
-                  { value: "none", label: "No earnings" },
-                ]}
-              />
-            </Field>
+              {/* --- The company ------------------------------------------- */}
+              <FilterGroup
+                title="The company"
+                hint="Today's figures. They narrow which names you look at and never enter the backtest."
+              >
+                <Field label="Industry">
+                  <Select
+                    value={filters.industry}
+                    onChange={(v) => set("industry", v)}
+                    options={[
+                      { value: "all", label: "Any industry" },
+                      ...industries.map((s) => ({ value: s, label: s })),
+                    ]}
+                  />
+                </Field>
 
-            {advanced ? (
-              <>
+                <Field label="Earnings">
+                  <Select
+                    value={filters.earnings}
+                    onChange={(v) => set("earnings", v as Filters["earnings"])}
+                    options={[
+                      { value: "all", label: "Any" },
+                      { value: "profitable", label: "Profitable" },
+                      { value: "unprofitable", label: "Losing money" },
+                    ]}
+                  />
+                </Field>
+
+                <Field label="Revenue">
+                  <Select
+                    value={filters.growth}
+                    onChange={(v) => set("growth", v as Filters["growth"])}
+                    options={[
+                      { value: "all", label: "Any" },
+                      { value: "growing", label: "Growing" },
+                      { value: "shrinking", label: "Shrinking" },
+                    ]}
+                  />
+                </Field>
+
                 <Field label="Dividend">
                   <Select
                     value={filters.dividend}
@@ -251,8 +372,46 @@ export function ScreenerView() {
                     ]}
                   />
                 </Field>
+              </FilterGroup>
+
+              {/* --- Risk and tradeability --------------------------------- */}
+              <FilterGroup
+                title="Risk and tradeability"
+                hint="Whether the 10 bps cost this page charges is a fair assumption for the name."
+              >
+                <Field label="Liquidity">
+                  <Select
+                    value={filters.liquidity}
+                    onChange={(v) =>
+                      set("liquidity", v as LiquidityBucket | "all")
+                    }
+                    options={[
+                      { value: "all", label: "Any volume" },
+                      ...(
+                        Object.keys(LIQUIDITY_LABELS) as LiquidityBucket[]
+                      ).map((l) => ({
+                        value: l,
+                        label: `${LIQUIDITY_LABELS[l]} (${counts?.liquidity[l] ?? 0})`,
+                      })),
+                    ]}
+                  />
+                </Field>
 
                 <Field label="Volatility">
+                  <Select
+                    value={filters.volatility}
+                    onChange={(v) => set("volatility", v as VolBucket | "all")}
+                    options={[
+                      { value: "all", label: "Any volatility" },
+                      ...(Object.keys(VOL_LABELS) as VolBucket[]).map((v) => ({
+                        value: v,
+                        label: `${VOL_LABELS[v]} (${counts?.volatility[v] ?? 0})`,
+                      })),
+                    ]}
+                  />
+                </Field>
+
+                <Field label="Beta">
                   <Select
                     value={filters.beta}
                     onChange={(v) => set("beta", v as Filters["beta"])}
@@ -263,32 +422,48 @@ export function ScreenerView() {
                     ]}
                   />
                 </Field>
-              </>
-            ) : null}
-          </div>
 
-          {advanced ? (
-            <label className="flex cursor-pointer items-start gap-2.5 border-t border-line-soft pt-3">
-              <input
-                type="checkbox"
-                checked={filters.robust}
-                onChange={(e) => set("robust", e.target.checked)}
-                className="mt-0.5 size-3.5 accent-[#ffb020]"
-              />
-              <span>
-                <span className="flex items-center gap-1.5 text-[12px] text-bright">
-                  <ShieldCheck className="size-3.5 text-amber" />
-                  Only show results that survive a stress test
-                </span>
-                <span className="prose-face mt-0.5 block max-w-2xl text-[11px] leading-relaxed text-dim">
+                <Field label="Short interest">
+                  <Select
+                    value={filters.shortInterest}
+                    onChange={(v) =>
+                      set("shortInterest", v as Filters["shortInterest"])
+                    }
+                    options={[
+                      { value: "all", label: "Any" },
+                      { value: "heavy", label: "Heavily shorted (10%+)" },
+                    ]}
+                  />
+                </Field>
+              </FilterGroup>
+
+              {/* --- Honesty switches --------------------------------------- */}
+              <div className="space-y-2 border-t border-line-soft pt-3">
+                <Toggle
+                  checked={filters.robust}
+                  onChange={(v) => set("robust", v)}
+                  icon={<ShieldCheck className="size-3.5 text-amber" />}
+                  label="Only show results that survive a stress test"
+                >
                   Still beats buying and holding at {data.stressCostBps} bps
                   instead of {data.costBps}, and still beats it with the
                   strategy&apos;s setting moved{" "}
                   {Math.round(data.neighbourShift * 100)}% either way. An edge
                   that only exists at one cost and one setting found noise.
-                </span>
-              </span>
-            </label>
+                </Toggle>
+
+                <Toggle
+                  checked={filters.profitableOnly}
+                  onChange={(v) => set("profitableOnly", v)}
+                  icon={<Coins className="size-3.5 text-amber" />}
+                  label="Hide strategies that still lost money"
+                >
+                  Some rows beat buying and holding by a wide margin while
+                  losing you money, because the stock fell further. Losing less
+                  than the stock did is a real property, but it is not a profit.
+                </Toggle>
+              </div>
+            </>
           ) : null}
         </div>
       </Panel>
@@ -341,13 +516,62 @@ export function ScreenerView() {
         {unknown > 0 ? (
           <p className="prose-face flex items-start gap-2 border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-dim">
             <Info className="mt-0.5 size-3 shrink-0" />
-            {fmtInt(unknown)} {unknown === 1 ? "result was" : "results were"}{" "}
-            hidden because the ticker has no value for a filter you set — an ETF
-            has no P/E or sector, and a company losing money has no meaningful
-            one. Missing is not the same as failing, so they are excluded rather
-            than quietly counted as passes.
+            <span>
+              {fmtInt(unknown)} {unknown === 1 ? "result was" : "results were"}{" "}
+              hidden because the ticker has no value for a filter you set — an
+              ETF has no P/E or sector, and a company losing money has no
+              meaningful one. Missing is not the same as failing, so they are
+              excluded rather than quietly counted as passes.
+            </span>
           </p>
         ) : null}
+
+        {/*
+          The base-rate escape hatch.
+
+          Without this, simple mode can only ever see strategies that worked,
+          which would make the app look far more successful than it is. The
+          count of what is being hidden is the honest headline.
+        */}
+        {effective.verdict !== "all" ? (
+          <p className="prose-face border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-dim">
+            Showing only what cleared the bar.{" "}
+            <span className="text-muted">
+              {fmtInt(data.pairs - (data.counts[effective.verdict] ?? 0))} of the{" "}
+              {fmtInt(data.pairs)} combinations tested did not
+            </span>{" "}
+            — most strategies do not work on most stocks, and seeing that is the
+            point of testing them.{" "}
+            <button
+              onClick={() => {
+                setFilters((f) => ({ ...f, verdict: "all", robust: false }));
+                setLimit(PAGE);
+              }}
+              className="text-amber underline-offset-2 hover:underline"
+            >
+              Show all {fmtInt(data.pairs)} that were tested
+            </button>
+          </p>
+        ) : (
+          <p className="prose-face border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-dim">
+            Showing every verdict, including the{" "}
+            {fmtInt(data.counts.weak ?? 0)} with no detectable edge and the{" "}
+            {fmtInt(data.counts.inverted ?? 0)} that ran backwards.{" "}
+            <button
+              onClick={() => {
+                setFilters((f) => ({
+                  ...f,
+                  verdict: "promising",
+                  robust: true,
+                }));
+                setLimit(PAGE);
+              }}
+              className="text-amber underline-offset-2 hover:underline"
+            >
+              Back to what cleared the bar
+            </button>
+          </p>
+        )}
       </Panel>
 
       <BaseRates data={data} />
@@ -469,7 +693,7 @@ function ResultsTable({
   };
 
   const headers = advanced
-    ? ["Ticker", "Strategy", "Now", "Return", "Holding", "Edge", "Trades", "Win", "Out of sample", "t", "Cap", "P/E", "Checks", ""]
+    ? ["Ticker", "Strategy", "Now", "Return", "Holding", "Edge", "Trades", "Win", "Out of sample", "t", "Cap", "P/E", "Liquidity", "Vol", "Checks", ""]
     : ["Ticker", "Strategy", "Now", "Return", "Holding", "Edge", "Trades", "Win", ""];
 
   return (
@@ -598,6 +822,30 @@ function ResultsTable({
                         <span className="text-faint">—</span>
                       ) : (
                         t.pe.toFixed(1)
+                      )}
+                    </td>
+                    <td
+                      className={cn(
+                        "tnum whitespace-nowrap px-3 py-2 text-right",
+                        // Below ~$10M a day the modelled 10 bps is optimistic,
+                        // so the edge shown is partly fiction.
+                        liquidityBucket(t?.dollarVolume ?? null) === "low"
+                          ? "text-amber"
+                          : "text-muted",
+                      )}
+                      title={
+                        liquidityBucket(t?.dollarVolume ?? null) === "low"
+                          ? "Thin. The real spread is likely wider than the 10 bps this page charges."
+                          : "Average daily traded value"
+                      }
+                    >
+                      {fmtCap(t?.dollarVolume ?? null)}
+                    </td>
+                    <td className="tnum whitespace-nowrap px-3 py-2 text-right text-muted">
+                      {t?.volatility === null || t?.volatility === undefined ? (
+                        <span className="text-faint">—</span>
+                      ) : (
+                        `${t.volatility.toFixed(0)}%`
                       )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
@@ -742,6 +990,65 @@ function Field({
     <label className="flex flex-col gap-1">
       <span className="label">{label}</span>
       {children}
+    </label>
+  );
+}
+
+/** A titled row of filters, so the three kinds never blur together. */
+function FilterGroup({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-t border-line-soft pt-3">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+        <span className="text-[11px] uppercase tracking-[0.12em] text-muted">
+          {title}
+        </span>
+        <span className="prose-face text-[11px] leading-snug text-dim">
+          {hint}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-end gap-2.5">{children}</div>
+    </div>
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+  icon,
+  label,
+  children,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2.5">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 size-3.5 accent-[#ffb020]"
+      />
+      <span>
+        <span className="flex items-center gap-1.5 text-[12px] text-bright">
+          {icon}
+          {label}
+        </span>
+        <span className="prose-face mt-0.5 block max-w-2xl text-[11px] leading-relaxed text-dim">
+          {children}
+        </span>
+      </span>
     </label>
   );
 }

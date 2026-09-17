@@ -4,6 +4,58 @@ Every substantive change to QuantPulse, newest first. One entry per commit.
 
 ---
 
+## 2026-09-16 — Screener filters, and a way to see what failed
+
+### You can now see the strategies that did not work
+
+The screener always held all 1,030 combinations, but the default view filtered
+to "worth a closer look" and **simple mode had no way to widen it** — so a whole
+class of user could only ever see strategies that succeeded, in an app whose
+entire argument is that most of them don't.
+
+A line under the results now states how many were hidden and offers to show
+everything. It drops the stress-test filter at the same time, because showing
+"everything" with that still on would show 103 of 1,030 and call it the base
+rate.
+
+### Filters, grouped into three honest categories
+
+| Group | Filters |
+| --- | --- |
+| **The strategy** | verdict, factor, signal now, minimum trades, beat holding out of sample, survives the stress test, hide strategies that still lost money |
+| **The company** | sector, industry, market cap, P/E, dividend, profitable or not, revenue growing or shrinking |
+| **Risk and tradeability** | liquidity, volatility, beta, short interest |
+
+Simple mode keeps four; the rest are behind **More filters** in advanced.
+
+- **Liquidity is the important one.** Every backtest charges a flat 10 bps round
+  trip, which is only honest on a name that trades. Below ~$10M a day the real
+  spread is wider than the modelled cost, so the column turns amber there.
+- **Minimum trades** guards against six-trade results that mean nothing.
+- **Hide strategies that still lost money** — a large edge over a stock that
+  fell is not a profit, and the green edge column reads like one.
+- Every bucket shows its ticker count, so an empty slice announces itself.
+- Analyst ratings and price targets were available and deliberately left out.
+  They are opinions; nothing else on the page is.
+
+### Universe widened to make those filters mean something
+
+The old universe was 206 mega- and large-caps: **zero mid-caps, zero small-caps,
+and every single name in the heaviest liquidity bucket.** "Mid", "Small" and
+"Thin" all returned nothing, which reads as a broken filter. Roughly 80 mid- and
+small-caps were added across every sector — also the part of the market where an
+edge is likelier to be real *and* likelier to be eaten by the spread, which is
+exactly the trade-off these filters exist to expose.
+
+### Fixed: crypto liquidity was off by a factor of a billion
+
+Yahoo reports crypto volume already denominated in dollars while equity volume
+is a share count, so multiplying by price gave BTC a daily turnover of
+$2,077,804,854M. The units give themselves away — 27 billion *units* of BTC is
+more than will ever exist. Now $27.2B, which is about right.
+
+---
+
 ## 2026-09-16 — The pre-close action window
 
 ### Alerts now fire in the last twenty minutes, and only there

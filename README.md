@@ -86,14 +86,31 @@ timestamps and sentiment — a different data provider, not Yahoo.
 ## Screener
 
 `/screener` answers the question the terminal cannot: *which ticker should I
-even be looking at?* It runs all five price factors against ~200 tickers at
-their default settings and lets you filter the results by sector, market cap
-and P/E.
+even be looking at?* It runs all five price factors against the universe at
+their default settings and lets you filter the results three ways:
+
+| Group | Filters |
+| --- | --- |
+| **The strategy** | verdict, factor, signal now, minimum trades, beat holding out of sample, survives the stress test, hide strategies that still lost money |
+| **The company** | sector, industry, market cap, P/E, dividend, profitable or not, revenue growing or shrinking |
+| **Risk and tradeability** | liquidity (daily dollar volume), volatility, beta, short interest |
+
+Simple mode shows four of these; the rest live behind **More filters** in
+advanced mode. Every bucket carries its ticker count (`Mid · $2–10B (34)`) so an
+empty slice announces itself rather than silently returning nothing.
+
+**Liquidity is the one that matters most** and the one a conventional screener
+never has. Every backtest here charges a flat 10 bps round trip, which is only
+honest on a name that actually trades; below roughly $10M a day the real spread
+is wider than the modelled cost and the edge shown is partly fiction.
+
+Analyst ratings and price targets are deliberately absent. They are opinions,
+not measurements, and nothing else on this page is an opinion.
 
 **It is precomputed, not live.** The scan is a thousand backtests and takes
 about three minutes — far too slow per request, and pointless, because daily
 bars only move once a day. `scripts/build-screen.mts` writes
-`public/screen.json` (271 KB, ~42 KB gzipped) and the page fetches that static
+`public/screen.json` (399 KB, ~62 KB gzipped) and the page fetches that static
 file. No Yahoo traffic, no function timeout, nothing added to the JS bundle.
 
 Rebuild it after the close:
