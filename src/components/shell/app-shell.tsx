@@ -7,7 +7,9 @@ import * as React from "react";
 
 import { Logo } from "@/components/brand/logo";
 import { NotificationBell } from "@/components/shell/notification-bell";
+import { useAccount } from "@/lib/use-account";
 import { useSignalWatch } from "@/lib/use-signal-watch";
+import { useSyncPush } from "@/lib/use-sync-push";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -22,6 +24,10 @@ const NAV = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   // Keeps the bell meaningful on every page, not just the watchlist.
   useSignalWatch();
+  // Keeps the synced copy current on every page, not just the account panel.
+  // No-op when sync is unconfigured or nobody is signed in.
+  const { session } = useAccount();
+  useSyncPush(session?.user.id ?? null);
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-base">

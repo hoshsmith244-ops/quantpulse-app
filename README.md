@@ -289,6 +289,11 @@ delete one added on your phone; notification history is unioned by event id with
 read-state sticky. Only singular preferences (theme, mode, cost setting) follow
 last-write-wins.
 
+Once signed in, changes push automatically in the background (a change check
+every few seconds, plus one when the tab is hidden or closed). `Sync now` on the
+account panel does a full pull-merge-push and is only needed to pick up changes
+made on another device.
+
 **What deliberately does not sync** is the per-device scan bookkeeping in
 `qp:signal-state` and `qp:pending-alerts`. Those record what a given browser has
 already seen; copying them across would either suppress an alert the second

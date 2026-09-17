@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import * as React from "react";
 
 import { SYNC_CONFIGURED, authRedirectUrl, getSupabase } from "./supabase";
+import { pullPayload, pushPayload } from "./sync-remote";
 import {
   applyLocal,
   collectLocal,
@@ -18,16 +19,12 @@ import {
  * `configured: false` and every action is a no-op, so the app behaves exactly
  * as it did before any of this existed.
  *
- * Sync is explicit rather than continuous. Signing in pulls the stored state,
- * merges it with whatever is in this browser, saves the result both places and
- * reloads; after that, local changes are pushed on a debounce. There is no live
- * cross-device streaming, because the honest version of that needs conflict
- * handling far beyond what this app's data is worth.
+ * Signing in pulls the stored state, merges it with whatever is in this browser,
+ * saves the result to both and reloads. After that useSyncPush() keeps the
+ * stored copy current in the background. There is no live cross-device
+ * streaming: the honest version of that needs conflict handling far beyond what
+ * this app's data is worth.
  */
-
-const TABLE = "user_state";
-/** Long enough to coalesce a burst of clicks, short enough to feel saved. */
-const PUSH_DEBOUNCE_MS = 2500;
 
 export type SyncStatus =
   | "idle"
@@ -72,27 +69,13 @@ export function useAccount() {
   // --- Remote read / write ------------------------------------------------
   const pull = React.useCallback(async (): Promise<SyncPayload | null> => {
     if (!supabase || !session) return null;
-    const { data, error: err } = await supabase
-      .from(TABLE)
-      .select("state")
-      .eq("user_id", session.user.id)
-      .maybeSingle();
-    if (err) throw new Error(err.message);
-    return (data?.state as SyncPayload | undefined) ?? null;
+    return pullPayload(supabase, session.user.id);
   }, [supabase, session]);
 
   const push = React.useCallback(
     async (payload: SyncPayload) => {
       if (!supabase || !session) return;
-      const { error: err } = await supabase.from(TABLE).upsert(
-        {
-          user_id: session.user.id,
-          state: payload,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" },
-      );
-      if (err) throw new Error(err.message);
+      await pushPayload(supabase, session.user.id, payload);
     },
     [supabase, session],
   );
@@ -127,22 +110,9 @@ export function useAccount() {
     [supabase, session, pull, push],
   );
 
-  /** Debounced push of local state; no merge, no reload. */
-  const schedulePush = React.useCallback(() => {
-    if (!supabase || !session) return;
-    setStatus("syncing");
-    const id = window.setTimeout(async () => {
-      try {
-        await push(collectLocal());
-        setLastSyncedAt(Date.now());
-        setStatus("saved");
-      } catch (e) {
-        setStatus("error");
-        setError(e instanceof Error ? e.message : "Could not save.");
-      }
-    }, PUSH_DEBOUNCE_MS);
-    return () => window.clearTimeout(id);
-  }, [supabase, session, push]);
+  // Ongoing pushes are handled by useSyncPush(), mounted once in the app shell
+  // so they keep running on every page rather than only while this panel is
+  // open. It is silent by design; the explicit feedback lives on the button.
 
   // --- Auth actions -------------------------------------------------------
   const signIn = React.useCallback(
@@ -190,6 +160,5 @@ export function useAccount() {
     signIn,
     signOut,
     syncNow,
-    schedulePush,
   };
 }
