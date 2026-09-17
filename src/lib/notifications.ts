@@ -399,7 +399,14 @@ function maybeShowBrowserNotification(events: SignalEvent[]) {
     return;
   }
 
-  /** A stand-down must never read like an instruction to trade. */
+  /**
+   * Only a pre-close alert may read as an instruction.
+   *
+   * A settled event is a record of a bar that has already closed — often read
+   * hours later, in the evening. Titling it "entry signal" makes it look like
+   * a live prompt to go and buy something at a price that no longer exists,
+   * which is the single most harmful thing this app could say.
+   */
   const line = (e: SignalEvent) => {
     const name = getFactor(e.factor).name.toLowerCase();
     if (e.cancelled) {
@@ -409,7 +416,8 @@ function maybeShowBrowserNotification(events: SignalEvent[]) {
       const verb = e.kind === "entry" ? "BUY" : "SELL";
       return `${e.symbol}: ${verb} at the close — ${e.minutesLeft ?? 0}m left to order`;
     }
-    return `${e.symbol}: ${e.kind === "entry" ? "entered" : "exited"} ${name}`;
+    const verb = e.kind === "entry" ? "entered" : "exited";
+    return `${e.symbol}: ${name} ${verb} on the ${e.date} close — already settled`;
   };
 
   // Cancellations lead: they are the time-critical ones, because the user may
@@ -426,7 +434,8 @@ function maybeShowBrowserNotification(events: SignalEvent[]) {
         ? `${first.symbol} — stand down`
         : first.provisional
           ? `${first.symbol} — act before the close`
-          : `${first.symbol} — ${first.kind === "entry" ? "entry signal" : "exit signal"}`;
+          : // Past tense and a state, never a verb that sounds like a command.
+            `${first.symbol} — ${first.kind === "entry" ? "now holding" : "now flat"} (settled)`;
 
   const body = ordered.slice(0, 4).map(line).join("\n");
 

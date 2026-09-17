@@ -7,6 +7,7 @@ import {
   Check,
   Clock,
   Info,
+  Lock,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -237,10 +238,34 @@ export default function NotificationsPage() {
                 send you into a trade the strategy never wanted.
               </Step>
               <Step when="After the close" title="Settled" tone="up">
-                The bar is final, so the entry or exit is recorded for the
-                record — with the realised return on exits. Nothing to act on.
+                The bar is final, so the entry or exit is recorded — with the
+                realised return on exits. These arrive whenever you open the
+                app, at any hour, and are marked <em>settled</em>. They are
+                history, not a prompt: the price they refer to has already
+                traded.
               </Step>
             </ol>
+
+            <p className="prose-face mt-4 border-t border-line pt-3 text-[12px] leading-relaxed text-text">
+              <span className="text-amber">
+                What happens while the app is closed.
+              </span>{" "}
+              The app remembers the last state it saw for each watched name, so
+              on the next open it reports anything that changed — you will not
+              miss the fact that a position opened or closed. Two limits worth
+              knowing:{" "}
+              <span className="text-muted">
+                only the net change is reported
+              </span>
+              , so if a name entered and then exited while you were away, you
+              see the exit and never hear about the entry; and{" "}
+              <span className="text-muted">
+                pre-close alerts do not queue up
+              </span>{" "}
+              — they are only useful inside their window, so if the app was shut
+              at 3:40 there is nothing to deliver later. The settled record
+              arrives instead.
+            </p>
 
             <p className="prose-face mt-4 border-t border-line pt-3 text-[11px] leading-relaxed text-dim">
               Times come from each venue&apos;s own calendar, so a 4:00pm New
@@ -345,8 +370,8 @@ function EventRow({ event }: { event: SignalEvent }) {
                   ? "BUY AT CLOSE"
                   : "SELL AT CLOSE"
                 : entered
-                  ? "ENTERED"
-                  : "EXITED"}
+                  ? "NOW HOLDING"
+                  : "NOW FLAT"}
           </span>
           {event.cancelled ? (
             <Tag tone="neutral">cancelled</Tag>
@@ -357,7 +382,14 @@ function EventRow({ event }: { event: SignalEvent }) {
                 ? ` · ${event.minutesLeft}m`
                 : ""}
             </Tag>
-          ) : null}
+          ) : (
+            /* Settled events are history. Saying so stops an evening
+               notification reading as a prompt to go and trade. */
+            <Tag tone="neutral">
+              <Lock className="size-2.5" />
+              settled
+            </Tag>
+          )}
           {!event.read ? <Tag tone="amber">new</Tag> : null}
         </span>
 
@@ -383,13 +415,13 @@ function EventRow({ event }: { event: SignalEvent }) {
             </>
           ) : (
             <>
-              {meta.name} · {entered ? "bought" : "sold"} on{" "}
-          <span className="text-text">{prettyDate(event.date)}</span> at{" "}
-          <span className="tnum text-text">{event.price.toFixed(2)}</span>
+              {meta.name} · the rule {entered ? "entered" : "exited"} on the{" "}
+              <span className="text-text">{prettyDate(event.date)}</span> close
+              at <span className="tnum text-text">{event.price.toFixed(2)}</span>
               {event.returnPct !== undefined ? (
                 <>
                   {" "}
-                  — closed{" "}
+                  — that trade made{" "}
                   <span
                     className={event.returnPct >= 0 ? "text-up" : "text-down"}
                   >
@@ -397,6 +429,12 @@ function EventRow({ event }: { event: SignalEvent }) {
                   </span>
                 </>
               ) : null}
+              .{" "}
+              <span className="text-dim">
+                That bar is final, so this is a record of what the strategy did
+                — not something to act on now. The chance to take that price was
+                the {ACTION_LEAD_MIN} minutes before the bell.
+              </span>
             </>
           )}
         </span>
