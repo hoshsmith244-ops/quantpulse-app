@@ -3,6 +3,27 @@ import type { NextConfig } from "next";
 const isDev = process.env.NODE_ENV === "development";
 
 /**
+ * Origin of the Supabase project, when sync is configured.
+ *
+ * The CSP below pins `connect-src` to 'self', which blocks the browser from
+ * reaching ANY other origin — including the auth and REST endpoints. Without
+ * this the sign-in request dies as an opaque "Failed to fetch" with no console
+ * error, because a blocked connection is not a script error.
+ *
+ * Derived from the env var rather than hardcoded so the allowance is exactly
+ * the project in use, and disappears entirely when sync is not configured.
+ */
+const supabaseOrigin = (() => {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+})();
+
+/**
  * Content Security Policy.
  *
  * `'unsafe-inline'` is required in two places and cannot currently be dropped:
@@ -20,7 +41,9 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
+  // Supabase only appears here when it is configured. Realtime is not used, so
+  // no wss: allowance for it — add one if that ever changes.
+  `connect-src 'self'${supabaseOrigin ? ` ${supabaseOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
