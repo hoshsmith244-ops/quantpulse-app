@@ -1,10 +1,11 @@
-import { Check, Lock, Minus } from "lucide-react";
+import { Check, Minus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AccountPanel } from "@/components/account/account-panel";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+
 import { Label, Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { cn } from "@/lib/utils";
 
@@ -81,54 +82,13 @@ export default function MembershipPage() {
           charged yet.
         </p>
 
-        {/* Account panel — deliberately inert for now */}
-        <div className="mt-8 grid grid-cols-1 gap-px bg-line lg:grid-cols-[minmax(0,1fr)_360px]">
-          <Panel className="border-0">
-            <PanelHead
-              title="Account"
-              right={<Tag tone="neutral">Not signed in</Tag>}
-            />
-            <div className="flex flex-col items-start gap-3 p-5">
-              <div className="flex items-center gap-2 text-dim">
-                <Lock className="size-3.5" />
-                <span className="text-[12px] uppercase tracking-[0.1em]">
-                  Authentication not yet wired
-                </span>
-              </div>
-              <p className="prose-face max-w-md text-[12px] leading-relaxed text-muted">
-                Sign-in, saved studies and billing are the next build step. The
-                form below is the intended shape of it, but it does not submit
-                anywhere and no data is stored.
-              </p>
+        {/* Real sign-in and sync. Falls back to an explanatory panel when
+            no Supabase project is configured for the deployment. */}
+        <div className="mt-8">
+          <AccountPanel />
+        </div>
 
-              <form
-                className="mt-2 w-full max-w-sm space-y-3"
-                aria-label="Sign in (not yet functional)"
-              >
-                <div>
-                  <Label>Email</Label>
-                  <Input
-                    type="email"
-                    placeholder="you@example.com"
-                    disabled
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label>Password</Label>
-                  <Input
-                    type="password"
-                    placeholder="••••••••"
-                    disabled
-                    className="mt-1.5"
-                  />
-                </div>
-                <Button type="button" variant="outline" disabled className="w-full">
-                  Sign in — coming soon
-                </Button>
-              </form>
-            </div>
-          </Panel>
+        <div className="mt-4 grid grid-cols-1 gap-px bg-line lg:grid-cols-[minmax(0,1fr)_360px]">
 
           <Panel className="border-0">
             <PanelHead title="Current access" />

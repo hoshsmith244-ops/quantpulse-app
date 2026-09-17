@@ -260,7 +260,42 @@ than dressing it up. Momentum on AAPL over the current window has an IC around
 −0.14 with a t-stat near −3.4: a real effect, pointing the opposite way to the
 textbook thesis.
 
-## Membership is UI only
+## Optional account sync
+
+`/membership` offers an optional sign-in that carries your **watchlist,
+appearance settings and notification history** between devices. It is off
+unless configured, and the app is fully usable without it — with no Supabase
+project set up, the panel says so and nothing else changes.
+
+**There is no password.** Sign-in is a one-time link emailed to you
+(Supabase magic link), so the app never asks for, handles or stores one.
+
+Enable it in about ten minutes:
+
+1. Create a free project at [supabase.com](https://supabase.com)
+2. SQL Editor → New query → paste [`supabase/schema.sql`](supabase/schema.sql) → Run
+3. Project Settings → API → copy the Project URL and the `anon` `public` key into
+   `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. Authentication → URL Configuration → add `<origin>/auth/callback` as a
+   redirect URL, for every origin you use
+
+Step 2 is not optional. It creates the table **and** the row-level security
+policies, and those policies are the only thing making the anon key safe to ship
+in a browser bundle. Never use the `service_role` key here — it bypasses RLS.
+
+**Conflicts: collections merge, preferences take the newer side.** Watchlists
+are unioned by `symbol:factor`, so adding a ticker on your laptop can never
+delete one added on your phone; notification history is unioned by event id with
+read-state sticky. Only singular preferences (theme, mode, cost setting) follow
+last-write-wins.
+
+**What deliberately does not sync** is the per-device scan bookkeeping in
+`qp:signal-state` and `qp:pending-alerts`. Those record what a given browser has
+already seen; copying them across would either suppress an alert the second
+device should raise or replay one already dealt with. A new device records its
+baselines silently, which is the correct behaviour.
+
+## Membership tiers are UI only
 
 `/membership` renders the account area and tiers, but **nothing is wired**.
 There is no authentication, no database, no billing, and the sign-in form does
