@@ -277,7 +277,14 @@ Enable it in about ten minutes:
 3. Project Settings → API → copy the Project URL and the `anon` `public` key into
    `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 4. Authentication → URL Configuration → add `<origin>/auth/callback` as a
-   redirect URL, for every origin you use
+   redirect URL, for every origin you use (localhost AND production)
+
+**Deploying it.** The CSP is assembled at BUILD time from
+`NEXT_PUBLIC_SUPABASE_URL`, so the variables must exist in the host before the
+build runs, and setting them without redeploying produces a "Failed to fetch"
+on sign-in with nothing in the console. The magic-link redirect needs no
+configuration — it uses the browser's own origin, so localhost, preview
+deployments and production each send links back to themselves.
 
 Step 2 is not optional. It creates the table **and** the row-level security
 policies, and those policies are the only thing making the anon key safe to ship

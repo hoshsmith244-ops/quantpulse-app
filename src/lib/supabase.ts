@@ -32,10 +32,24 @@ export function getSupabase(): SupabaseClient | null {
   return client;
 }
 
-/** Where the magic link should land. */
+/**
+ * Where the magic link should land.
+ *
+ * The browser's own origin wins over NEXT_PUBLIC_APP_URL. That ordering is
+ * deliberate: this is only ever called from a click in a real browser, which by
+ * definition knows where it is, whereas the env var is a build-time constant
+ * that is trivially wrong in one environment or the other — a production build
+ * carrying a localhost value would email people links back to their own
+ * machine. Preferring the live origin makes localhost, preview deployments and
+ * production all work with no per-environment configuration.
+ *
+ * Safe because Supabase validates the redirect against the project's allowlist,
+ * so an unexpected origin is rejected there rather than trusted here.
+ */
 export function authRedirectUrl(): string {
   const base =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-    (typeof window !== "undefined" ? window.location.origin : "");
+    typeof window !== "undefined"
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "");
   return `${base}/auth/callback`;
 }
