@@ -33,7 +33,7 @@ Then open <http://localhost:3000>.
 | --- | --- |
 | `/` | Landing page |
 | `/dashboard` | The tool. Opens in **Simple** mode; **Advanced** holds the statistics |
-| `/screener` | Every strategy against every ticker, filtered by sector, size and P/E |
+| `/screener` | Every strategy against every ticker, filtered by strategy, company and risk |
 | `/watchlist` | Saved ticker + strategy pairs, scanned in one pass |
 | `/notifications` | Entry and exit changes across the watchlist |
 | `/guide` | How to use it, and how to read every statistic |
@@ -96,7 +96,7 @@ their default settings and lets you filter the results three ways:
 | **Risk and tradeability** | liquidity (daily dollar volume), volatility, beta, short interest |
 
 Simple mode shows four of these; the rest live behind **More filters** in
-advanced mode. Every bucket carries its ticker count (`Mid · $2–10B (34)`) so an
+advanced mode. Every bucket carries its ticker count (`Mid · $2–10B (46)`) so an
 empty slice announces itself rather than silently returning nothing.
 
 **Liquidity is the one that matters most** and the one a conventional screener
