@@ -4,6 +4,46 @@ Every substantive change to QuantPulse, newest first. One entry per commit.
 
 ---
 
+## 2026-09-16 — Finding what to look at
+
+### Screener
+
+The terminal could always evaluate a ticker you had already thought of. It had
+no answer for *which* ticker — the harder half of the job, and the half a new
+trader has no way to do.
+
+`/screener` runs all five price factors against ~200 tickers and filters the
+results by **sector, market cap and P/E**. Click a row to open it in the
+terminal with that strategy preloaded, or Watch it straight from the table.
+
+- **Precomputed, not live.** A thousand backtests takes ~3 minutes, so
+  `scripts/build-screen.mts` writes `public/screen.json` and the page fetches
+  that static file. No Yahoo traffic, no function timeout, nothing added to the
+  JS bundle.
+- **Every factor at its default setting.** Sweeping parameters to find winners
+  would produce results that evaporate when you open the ticker. Every number on
+  the screen reproduces in the terminal — verified: AIG showed t = 5.43 in both.
+- **Fundamentals filter the universe, never the backtest.** They are today's
+  values; feeding them into a three-year simulation would be lookahead bias.
+- **Two defences on by default**, because scanning 1,030 combinations is exactly
+  the multiple-testing trap the guide warns about. Results must still beat
+  holding at 25 bps and with the setting moved ±20%, and the header shows how
+  many would clear the significance bar by luck (~47) beside how many actually
+  did (389).
+- Rows whose strategy **lost money** are tagged as such. A large edge over a
+  stock that fell is not a profit, but a green edge column reads like one.
+- Tickers with no value for an active filter are reported as excluded, not
+  silently dropped — an ETF has no P/E, and missing is not the same as failing.
+- Guide gains section 09 on reading a screen without fooling yourself.
+
+*What the first scan found:* 45 of 1,030 pairs graded "worth a closer look" —
+but **226 came back statistically backwards**, against those 45 that worked as
+intended. Over this window, momentum on large caps predicts *weaker* forward
+returns (DIS t = −7.4). Most of the real structure in the market right now
+points the opposite way to the thesis.
+
+---
+
 ## 2026-09-16 — Making the signal actually tradeable
 
 ### `be4f6b9` Charge trading costs, and alert before the close rather than after

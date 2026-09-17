@@ -33,6 +33,9 @@ Then open <http://localhost:3000>.
 | --- | --- |
 | `/` | Landing page |
 | `/dashboard` | The tool. Opens in **Simple** mode; **Advanced** holds the statistics |
+| `/screener` | Every strategy against every ticker, filtered by sector, size and P/E |
+| `/watchlist` | Saved ticker + strategy pairs, scanned in one pass |
+| `/notifications` | Entry and exit changes across the watchlist |
 | `/guide` | How to use it, and how to read every statistic |
 | `/membership` | Account area and tiers (UI only — see below) |
 | `/api/history` | Daily OHLCV for one ticker (GET) |
@@ -79,6 +82,41 @@ Headlines are labelled as context, not cause. A story published near a price
 move is a hypothesis; the interface says so rather than asserting a reason.
 Building a real news factor would need point-in-time historical news with
 timestamps and sentiment — a different data provider, not Yahoo.
+
+## Screener
+
+`/screener` answers the question the terminal cannot: *which ticker should I
+even be looking at?* It runs all five price factors against ~200 tickers at
+their default settings and lets you filter the results by sector, market cap
+and P/E.
+
+**It is precomputed, not live.** The scan is a thousand backtests and takes
+about three minutes — far too slow per request, and pointless, because daily
+bars only move once a day. `scripts/build-screen.mts` writes
+`public/screen.json` (271 KB, ~42 KB gzipped) and the page fetches that static
+file. No Yahoo traffic, no function timeout, nothing added to the JS bundle.
+
+Rebuild it after the close:
+
+```bash
+node scripts/build-screen.mts
+```
+
+Two rules the script enforces, both of which a conventional screener breaks:
+
+- **No parameter sweeping.** Every factor runs at its default setting. Hunting
+  the grid for the best number would guarantee good-looking results that do not
+  reproduce when you open the ticker in the terminal. Every figure on the screen
+  is reproducible by typing that ticker in.
+- **Fundamentals never touch the backtest.** Market cap, P/E, beta and dividend
+  yield are today's snapshot. Today's P/E did not exist three years ago, so
+  scoring a three-year simulation with it would be lookahead bias. They narrow
+  which names you look at; the statistics come from price alone.
+
+Because scanning a thousand combinations is exactly the multiple-testing trap
+the guide warns about, two defences are on by default: results must survive a
+raised cost (25 bps) and a parameter shift of ±20%, and the page shows how many
+results chance alone would produce next to how many actually appeared.
 
 ## Watchlist
 

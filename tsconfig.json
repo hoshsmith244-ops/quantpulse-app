@@ -10,6 +10,10 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    // scripts/*.mts run on Node's native type stripping, which requires the
+    // real ".ts" extension on relative imports. Permitted, never required, so
+    // application code under src/ is unaffected. Safe because noEmit is set.
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,

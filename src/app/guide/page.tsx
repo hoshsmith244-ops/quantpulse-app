@@ -214,6 +214,59 @@ export default function GuidePage() {
               </li>
             </ul>
           </Section>
+
+          <Section n="09" title="The screener, and why it needs extra care">
+            <p>
+              The{" "}
+              <Link href="/screener" className="text-amber hover:underline">
+                screener
+              </Link>{" "}
+              runs every strategy against every ticker so you can see where an
+              edge might exist instead of guessing which symbol to type. It is
+              the fastest way to find a candidate — and the fastest way to fool
+              yourself, because it does the exact thing section 08 warns about,
+              a thousand times over.
+            </p>
+            <p>
+              Trying a thousand combinations means some will look excellent
+              purely by luck. Around one in twenty clears the significance bar
+              by chance, so a scan that size produces roughly fifty convincing
+              results from nothing at all. The screen shows that expected number
+              next to the real one, on purpose. If they are close, the list is
+              mostly noise.
+            </p>
+            <p>Two defences are built in, and both are on by default:</p>
+            <ul className="ml-4 list-disc space-y-1.5 marker:text-amber">
+              <li>
+                <Term>The stress test.</Term> A result only shows if it still
+                beats buying and holding when trading costs are raised from 10
+                to 25 basis points, and when the strategy&apos;s setting is
+                moved 20% either way. An edge that exists at one cost and one
+                setting is the signature of a curve fit.
+              </li>
+              <li>
+                <Term>The out-of-sample column.</Term> What that same setting
+                did on the most recent 40% of history, next to what holding did
+                over the same stretch. If the strategy wins the headline column and
+                loses this one, believe this one.
+              </li>
+            </ul>
+            <p>
+              Company filters — sector, market cap, P/E — narrow{" "}
+              <em>which names you look at</em>. They are today&apos;s figures and
+              are never fed into the backtest: today&apos;s P/E did not exist
+              three years ago, so scoring a three-year simulation with it would
+              be the plainest kind of cheating. Use them to search a corner of
+              the market you understand, not to explain a result.
+            </p>
+            <p>
+              A last warning that the numbers will not give you. Most of what
+              survives a scan in a given period survives for the{" "}
+              <em>same reason</em> — a trend filter that sat out a falling
+              market, say. Add six of them and you do not have six ideas, you
+              have one idea six times, and they will fail together.
+            </p>
+          </Section>
         </div>
 
         <Panel className="mt-10">
