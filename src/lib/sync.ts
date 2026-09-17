@@ -1,15 +1,21 @@
 "use client";
 
 import { APPEARANCE_KEY, sanitiseAppearance, type Appearance } from "./appearance";
+import {
+  MAX_EVENTS,
+  SYNC_VERSION,
+  describePayload,
+  type LocalSummary,
+  type SyncPayload,
+} from "./sync-merge";
 import type { SignalEvent } from "./notifications";
 import type { WatchEntry } from "./watchlist";
 
 /**
- * What syncs between devices, and how conflicts are settled.
+ * The localStorage side of sync: what gets collected, and how it is applied.
  *
- * The rule that matters: COLLECTIONS MERGE, PREFERENCES TAKE THE NEWER SIDE.
- * A naive last-write-wins would silently delete watchlist entries added on the
- * other device, which is the one outcome a sync feature must never produce.
+ * The reconciliation rules live in sync-merge.ts, which imports nothing at
+ * runtime so it can be driven directly by scripts/check-sync.mts.
  *
  * Deliberately NOT synced — the per-device scan bookkeeping in
  * `qp:signal-state`, `qp:pending-alerts` and `qp:last-check`. Those record what
@@ -19,9 +25,18 @@ import type { WatchEntry } from "./watchlist";
  * is exactly the desired behaviour.
  */
 
-export const SYNC_VERSION = 1;
+export {
+  SYNC_VERSION,
+  MAX_EVENTS,
+  describePayload,
+  mergePayloads,
+  mergeWatchlists,
+  mergeNotifications,
+  type SyncPayload,
+  type LocalSummary,
+} from "./sync-merge";
 
-/** Storage keys owned elsewhere; duplicated here so sync stays one module. */
+/** Storage keys owned elsewhere; gathered here so sync stays one module. */
 export const KEYS = {
   appearance: APPEARANCE_KEY,
   mode: "qp:mode",
@@ -30,20 +45,6 @@ export const KEYS = {
   notifyPrefs: "qp:notify-prefs",
   notifications: "qp:notifications",
 } as const;
-
-export type SyncPayload = {
-  version: number;
-  /** epoch ms of the last local change */
-  updatedAt: number;
-  appearance: Appearance | null;
-  mode: string | null;
-  params: unknown | null;
-  watchlist: WatchEntry[];
-  notifyPrefs: unknown | null;
-  notifications: SignalEvent[];
-};
-
-const MAX_EVENTS = 60;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -88,94 +89,6 @@ export function applyLocal(p: SyncPayload) {
   write(KEYS.watchlist, p.watchlist ?? []);
   if (p.notifyPrefs) write(KEYS.notifyPrefs, p.notifyPrefs);
   write(KEYS.notifications, (p.notifications ?? []).slice(0, MAX_EVENTS));
-}
-
-const entryKey = (e: WatchEntry) => `${e.symbol}:${e.factor}`;
-
-/**
- * Union of two watchlists.
- *
- * Union rather than newest-wins because losing a ticker someone chose to watch
- * is a far worse failure than carrying an extra one they can remove in a click.
- * Ties keep the earlier addedAt so the list stays in the order it was built.
- */
-function mergeWatchlists(a: WatchEntry[], b: WatchEntry[]): WatchEntry[] {
-  const out = new Map<string, WatchEntry>();
-  for (const e of [...a, ...b]) {
-    if (!e || typeof e.symbol !== "string") continue;
-    const k = entryKey(e);
-    const seen = out.get(k);
-    if (!seen || (e.addedAt ?? 0) < (seen.addedAt ?? 0)) out.set(k, e);
-  }
-  return [...out.values()].sort((x, y) => (x.addedAt ?? 0) - (y.addedAt ?? 0));
-}
-
-/**
- * Union of two notification lists, deduped by event id.
- *
- * Read state is sticky: an event read on any device counts as read everywhere,
- * because the alternative is an unread badge that will not clear.
- */
-function mergeNotifications(a: SignalEvent[], b: SignalEvent[]): SignalEvent[] {
-  const out = new Map<string, SignalEvent>();
-  for (const e of [...a, ...b]) {
-    if (!e || typeof e.id !== "string") continue;
-    const seen = out.get(e.id);
-    out.set(e.id, seen ? { ...seen, read: seen.read || e.read } : e);
-  }
-  return [...out.values()].sort((x, y) => y.at - x.at).slice(0, MAX_EVENTS);
-}
-
-/**
- * Combines this device's state with the stored one.
- *
- * Collections union; singular preferences come from whichever side was touched
- * more recently.
- */
-export function mergePayloads(
-  local: SyncPayload,
-  remote: SyncPayload | null,
-): SyncPayload {
-  if (!remote) return local;
-
-  const remoteIsNewer = (remote.updatedAt ?? 0) > (local.updatedAt ?? 0);
-  const preferred = remoteIsNewer ? remote : local;
-  const other = remoteIsNewer ? local : remote;
-
-  const pick = <K extends keyof SyncPayload>(k: K) =>
-    (preferred[k] ?? other[k]) as SyncPayload[K];
-
-  return {
-    version: SYNC_VERSION,
-    updatedAt: Math.max(local.updatedAt ?? 0, remote.updatedAt ?? 0),
-    appearance: pick("appearance"),
-    mode: pick("mode"),
-    params: pick("params"),
-    notifyPrefs: pick("notifyPrefs"),
-    watchlist: mergeWatchlists(local.watchlist ?? [], remote.watchlist ?? []),
-    notifications: mergeNotifications(
-      local.notifications ?? [],
-      remote.notifications ?? [],
-    ),
-  };
-}
-
-export type LocalSummary = {
-  watched: number;
-  events: number;
-  unread: number;
-  themed: boolean;
-};
-
-/** Human summary for the account panel. */
-export function describePayload(p: SyncPayload): LocalSummary {
-  const unread = (p.notifications ?? []).filter((e) => !e.read).length;
-  return {
-    watched: (p.watchlist ?? []).length,
-    events: (p.notifications ?? []).length,
-    unread,
-    themed: Boolean(p.appearance),
-  };
 }
 
 // ---------------------------------------------------------------------------
