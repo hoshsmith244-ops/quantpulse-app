@@ -2,7 +2,12 @@
 
 import * as React from "react";
 
-import { ACTION_INTERVAL_MS, checkSignals, shouldCheck } from "./notifications";
+import {
+  ACTION_INTERVAL_MS,
+  checkSignals,
+  shouldCheck,
+  unseenEntries,
+} from "./notifications";
 import { useWatchlist } from "./watchlist";
 
 /**
@@ -27,14 +32,20 @@ export function useSignalWatch() {
     let cancelled = false;
 
     const run = () => {
-      // shouldCheck() compares against the delay the last scan asked for, so
-      // polling on the short interval costs nothing when nothing is due.
-      if (cancelled || !shouldCheck()) return;
+      if (cancelled) return;
+      // A ticker added since the last scan has no recorded state, so it cannot
+      // be compared against anything. Record its baseline straight away rather
+      // than waiting out the throttle: a tab closed before the next scan would
+      // leave it unseen, and the following day's real signal would be swallowed
+      // as a first observation. Otherwise shouldCheck() decides, so polling on
+      // the short interval costs nothing when nothing is due.
+      if (!shouldCheck() && unseenEntries(entries).length === 0) return;
       // Fire and forget: failures are already swallowed per-ticker inside.
       void checkSignals(entries);
     };
 
-    // Give first paint room to finish before firing network work.
+    // Give first paint room to finish before firing network work. Kept short
+    // so adding a ticker and immediately closing the tab still records it.
     const initial = setTimeout(run, 1500);
     const id = setInterval(run, ACTION_INTERVAL_MS);
 

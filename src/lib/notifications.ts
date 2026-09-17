@@ -217,15 +217,27 @@ export async function checkSignals(
       const entry = queue.shift();
       if (!entry) return;
 
+      const k = keyOf(entry);
+
       const [history, context] = await Promise.all([
         loadHistory(entry.symbol),
         loadContext(entry.symbol),
       ]);
-      if (!history) continue;
+
+      if (!history) {
+        // Carry the last known state forward. The store is rewritten whole, so
+        // simply skipping would erase what we knew about this ticker, and the
+        // next successful check would treat it as newly added — silently
+        // swallowing a real entry or exit as a "first observation".
+        const prior = previous[k];
+        if (prior) nextState[k] = prior;
+        const priorPending = pendingBefore[k];
+        if (priorPending) nextPending[k] = priorPending;
+        continue;
+      }
 
       const result = analyse(history.bars, entry.factor, entry.param, 5);
       const { signal, trades } = result;
-      const k = keyOf(entry);
 
       const lastClosed = [...trades]
         .reverse()
@@ -391,6 +403,21 @@ export function nextDelayMs(): number {
 export function shouldCheck(): boolean {
   const last = readJson<number>(LAST_CHECK_KEY, 0);
   return Date.now() - last > nextDelayMs();
+}
+
+/**
+ * Watchlist entries with no recorded state yet.
+ *
+ * A ticker cannot be compared against anything until its first scan, so one
+ * that is added and never scanned is invisible: the next scan records it as a
+ * baseline and says nothing, swallowing whatever the rule did in between. The
+ * scan is throttled globally, so adding a ticker just after a scan could leave
+ * it unrecorded for the next quarter hour — long enough to close the tab and
+ * lose a day's signal.
+ */
+export function unseenEntries(entries: WatchEntry[]): WatchEntry[] {
+  const previous = readJson<SignalState>(STATE_KEY, {});
+  return entries.filter((e) => !(keyOf(e) in previous));
 }
 
 function maybeShowBrowserNotification(events: SignalEvent[]) {
