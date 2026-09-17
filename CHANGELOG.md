@@ -4,6 +4,50 @@ Every substantive change to QuantPulse, newest first. One entry per commit.
 
 ---
 
+## 2026-09-17 — Appearance settings
+
+### `/settings` — five controls, no component changes
+
+Every option is a CSS custom-property override keyed off a `data-*` attribute
+on `<html>`, so adding a palette costs a few lines of CSS and nothing in the
+component tree. A live preview sits underneath showing real stat tiles, tags and
+a results table in the chosen scheme.
+
+| Setting | Options |
+| --- | --- |
+| Accent | Amber, Cyan, Violet, Lime, Sky |
+| Direction colours | Green up, Blue/orange, Red up |
+| Background | Midnight, Ink, Slate |
+| Grid weight | Sharp, Subtle, Bold |
+| Lattice background | on / off |
+
+**Direction colours are not decoration.** Roughly one man in twelve cannot
+reliably separate red from green — on a page where that distinction *is* the
+information. Blue/orange stays legible for them. "Red up" is not a novelty
+either: red means a gain across most of East Asia.
+
+Settings apply before first paint via a small inline script in the root layout,
+following Next's documented flash-prevention pattern (`InlineScript` helper plus
+`suppressHydrationWarning` on `<html>`), so a non-default theme never flashes
+the default on load.
+
+### Fixed: the stale-asset bug that has been haunting dev all along
+
+`next.config.ts` set `Cache-Control: public, max-age=31536000, immutable` on
+`/_next/static/:path*`. Next's own docs say it sets exactly that header itself
+and that **it cannot be overridden from `next.config.js`** — so the rule did
+nothing in production, and in development it was actively destructive:
+Turbopack reuses filenames while contents change, so the browser served a
+year-old copy of a file that had just been rewritten.
+
+That is the root cause of every "the edit did nothing until the assets were
+force-refetched" episode during this project — including the one that made this
+very feature look broken when the CSS was correct all along. Next printed a
+warning about it on every build. The warning was right. Rule removed; the
+warning is gone.
+
+---
+
 ## 2026-09-16 — Screener filters, and a way to see what failed
 
 ### You can now see the strategies that did not work

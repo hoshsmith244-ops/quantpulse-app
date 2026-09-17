@@ -34,6 +34,76 @@
   --radius-box: 2px;
 }
 
+/* ---------------------------------------------------------------------------
+   Appearance settings
+   ---------------------------------------------------------------------------
+   Every option below is a token override keyed off a data attribute on <html>,
+   set by src/lib/appearance.ts (and, before first paint, by the inline script
+   in layout.tsx). Nothing in the component tree reads these, which is the whole
+   point: a new palette costs a few lines here and no UI changes at all.
+
+   NAMING WART, on purpose: `--color-amber` is the ACCENT slot, not a promise of
+   the colour amber. Renaming it would touch `text-amber` / `border-amber` /
+   `bg-amber` in nearly every component for no user-visible gain, so the slot
+   keeps its original name and changes hue.
+--------------------------------------------------------------------------- */
+
+/* --- Accent --------------------------------------------------------------- */
+html[data-accent="cyan"] {
+  --color-amber: #22d3ee;
+  --color-amber-dim: #0e5c6b;
+}
+html[data-accent="violet"] {
+  --color-amber: #a78bfa;
+  --color-amber-dim: #4c3a85;
+}
+html[data-accent="lime"] {
+  --color-amber: #a3e635;
+  --color-amber-dim: #4d6b18;
+}
+html[data-accent="sky"] {
+  --color-amber: #60a5fa;
+  --color-amber-dim: #2a4f80;
+}
+
+/* --- Market direction colours --------------------------------------------- */
+/* Blue/orange stays legible with red-green colour blindness. */
+html[data-market="colorblind"] {
+  --color-up: #38bdf8;
+  --color-down: #fb923c;
+}
+/* Red is up across most of East Asia. */
+html[data-market="inverted"] {
+  --color-up: #ff4d4d;
+  --color-down: #00d492;
+}
+
+/* --- Surface -------------------------------------------------------------- */
+html[data-surface="ink"] {
+  --color-base: #000000;
+  --color-panel: #0a0a0a;
+  --color-raised: #121212;
+  --color-overlay: #1a1a1a;
+}
+html[data-surface="slate"] {
+  --color-base: #0d1117;
+  --color-panel: #131923;
+  --color-raised: #1a212e;
+  --color-overlay: #222b3a;
+}
+
+/* --- Grid weight ---------------------------------------------------------- */
+html[data-grid="subtle"] {
+  --color-line: #141a22;
+  --color-line-soft: #0f141c;
+  --color-edge: #1e2634;
+}
+html[data-grid="bold"] {
+  --color-line: #2a3446;
+  --color-line-soft: #1c2331;
+  --color-edge: #3d4a60;
+}
+
 @layer base {
   * {
     border-color: var(--color-line);
@@ -50,6 +120,16 @@
     font-family: var(--font-mono);
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Optional lattice behind everything. Fixed so it does not travel with
+     scroll, and faint enough to read as texture rather than as content. */
+  html[data-texture="on"] body {
+    background-image:
+      linear-gradient(to right, var(--color-line-soft) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--color-line-soft) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-attachment: fixed;
   }
 
   /* Prose passages opt back into the sans face for readability. */

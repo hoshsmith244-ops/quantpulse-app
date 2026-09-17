@@ -1,5 +1,6 @@
 "use client";
 
+import { Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
@@ -68,6 +69,21 @@ export function TopBar() {
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <NotificationBell />
+        {/* Icon rather than a nav item: the top row is already five links, and
+            appearance is something you set once. */}
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          title="Settings"
+          className={cn(
+            "flex size-7 items-center justify-center border transition-colors",
+            pathname === "/settings"
+              ? "border-amber text-amber"
+              : "border-transparent text-dim hover:border-edge hover:text-bright",
+          )}
+        >
+          <Settings className="size-3.5" />
+        </Link>
         <span className="hidden items-center gap-1.5 sm:flex">
           <span className="size-1.5 bg-up" />
           <span className="text-[10px] uppercase tracking-[0.12em] text-dim">

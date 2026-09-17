@@ -60,16 +60,16 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
-      {
-        // Immutable build assets.
-        source: "/_next/static/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
+      // NOTE: there is deliberately no Cache-Control rule for /_next/static.
+      //
+      // Next already serves those assets as `public, max-age=31536000,
+      // immutable` and documents that the header cannot be overridden here, so
+      // setting it was redundant in production — and actively harmful in dev,
+      // where Turbopack reuses filenames while the contents change. The browser
+      // held a year-old copy of a file that had just been rewritten, which
+      // showed up as edits that appeared to do nothing until the assets were
+      // force-refetched. Next warns about this on every build; the warning was
+      // right.
       {
         source: "/:all*(svg|jpg|jpeg|png|webp|avif|ico|woff2)",
         headers: [

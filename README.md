@@ -36,6 +36,7 @@ Then open <http://localhost:3000>.
 | `/screener` | Every strategy against every ticker, filtered by strategy, company and risk |
 | `/watchlist` | Saved ticker + strategy pairs, scanned in one pass |
 | `/notifications` | Entry and exit changes across the watchlist |
+| `/settings` | Appearance — accent, direction colours, background, grid |
 | `/guide` | How to use it, and how to read every statistic |
 | `/membership` | Account area and tiers (UI only — see below) |
 | `/api/history` | Daily OHLCV for one ticker (GET) |
@@ -134,6 +135,29 @@ Because scanning a thousand combinations is exactly the multiple-testing trap
 the guide warns about, two defences are on by default: results must survive a
 raised cost (25 bps) and a parameter shift of ±20%, and the page shows how many
 results chance alone would produce next to how many actually appeared.
+
+## Appearance
+
+`/settings` has five controls: accent colour, direction colours, background,
+grid weight, and an optional lattice texture. Each is a CSS custom-property
+override keyed off a `data-*` attribute on `<html>` (`src/lib/appearance.ts` →
+`globals.css`), so adding a palette is a few lines of CSS and no component
+changes at all.
+
+**Direction colours earn their place.** About one man in twelve cannot reliably
+separate red from green — on a page where that distinction *is* the
+information — so a blue/orange palette is offered. "Red up" is the East Asian
+convention, not a gimmick.
+
+Settings are applied before first paint by a small inline script in the root
+layout, so a non-default theme never flashes the default. That follows the
+pattern in `next/dist/docs/01-app/02-guides/preventing-flash-before-hydration.md`:
+an `InlineScript` helper that renders as a real script on the server and inert
+`text/plain` on the client, plus `suppressHydrationWarning` on `<html>`.
+
+> **Naming wart, on purpose.** `--color-amber` is the *accent slot*, not a
+> promise of the colour amber — `text-amber` renders cyan when cyan is selected.
+> Renaming it would touch nearly every component for no user-visible gain.
 
 ## The pre-close action window
 
