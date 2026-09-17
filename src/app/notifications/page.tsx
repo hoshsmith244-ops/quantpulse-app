@@ -5,8 +5,10 @@ import {
   ArrowUpRight,
   BellOff,
   Check,
+  Clock,
   Info,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
@@ -14,6 +16,7 @@ import * as React from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
+import { ACTION_LEAD_MIN, MOC_CUTOFF_MIN } from "@/lib/action-window";
 import { getFactor } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
 import {
@@ -180,18 +183,113 @@ export default function NotificationsPage() {
               </p>
             ) : null}
 
+            {/* One text child only: a bare <span> here becomes a flex ITEM and
+                breaks the sentence into separate boxes. */}
             <p className="prose-face flex items-start gap-2 border-t border-line pt-3 text-[11px] leading-relaxed text-dim">
               <Info className="mt-0.5 size-3 shrink-0" />
-              QuantPulse has no account system or server scheduler, so it cannot
-              reach you when the app is closed. Signals move on the daily close —
-              about once a day — so checks happen when you open the app and
-              every 15 minutes while it is open. Email or push that works with
-              the app shut needs an account, which is the next thing to build.
+              <span>
+                QuantPulse has no account system or server scheduler, so it
+                cannot reach you when the app is closed —{" "}
+                <span className="text-muted">
+                  including during the window below
+                </span>
+                . Push that survives a closed tab needs an account, which is
+                the next thing to build.
+              </span>
+            </p>
+          </div>
+        </Panel>
+
+        {/* When alerts fire, and why that specific window. */}
+        <Panel>
+          <PanelHead
+            title="When alerts fire"
+            right={
+              <Tag tone="amber">
+                <Clock className="size-2.5" />
+                last {ACTION_LEAD_MIN} minutes
+              </Tag>
+            }
+          />
+          <div className="p-4">
+            <ol className="space-y-3">
+              <Step
+                when={`${ACTION_LEAD_MIN} min before the close`}
+                title="The window opens"
+                tone="amber"
+              >
+                Every watched name is re-run with the live price standing in for
+                today&apos;s close. If the rule would flip, you get one alert —
+                with the minutes remaining to place the order.
+              </Step>
+              <Step
+                when={`${MOC_CUTOFF_MIN} min before the close`}
+                title="On-close orders stop"
+                tone="neutral"
+              >
+                The exchange accepts no new market-on-close or limit-on-close
+                orders after this. Alerts stop too, because there is nothing
+                actionable left to say.
+              </Step>
+              <Step when="Any time in between" title="Stand-down" tone="down">
+                If the price moves back and the rule no longer triggers, the
+                earlier alert is withdrawn. Without this a single alert could
+                send you into a trade the strategy never wanted.
+              </Step>
+              <Step when="After the close" title="Settled" tone="up">
+                The bar is final, so the entry or exit is recorded for the
+                record — with the realised return on exits. Nothing to act on.
+              </Step>
+            </ol>
+
+            <p className="prose-face mt-4 border-t border-line pt-3 text-[11px] leading-relaxed text-dim">
+              Times come from each venue&apos;s own calendar, so a 4:00pm New
+              York close puts the window at 3:40–3:50pm, London&apos;s 4:30pm
+              close puts it at 4:10–4:20pm, and half-day holidays shift
+              automatically. Crypto never closes, so no window applies to it.
+              Your broker may stop accepting on-close orders earlier than the
+              exchange does — check before relying on the last minute.
             </p>
           </div>
         </Panel>
       </div>
     </AppShell>
+  );
+}
+
+function Step({
+  when,
+  title,
+  tone,
+  children,
+}: {
+  when: string;
+  title: string;
+  tone: "amber" | "up" | "down" | "neutral";
+  children: React.ReactNode;
+}) {
+  const dot = {
+    amber: "bg-amber",
+    up: "bg-up",
+    down: "bg-down",
+    neutral: "bg-dim",
+  }[tone];
+
+  return (
+    <li className="flex gap-3">
+      <span className={cn("mt-1.5 size-2 shrink-0", dot)} />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-[13px] text-bright">{title}</span>
+          <span className="text-[10px] uppercase tracking-[0.1em] text-dim">
+            {when}
+          </span>
+        </span>
+        <span className="prose-face mt-0.5 block max-w-2xl text-[12px] leading-relaxed text-muted">
+          {children}
+        </span>
+      </span>
+    </li>
   );
 }
 
@@ -204,18 +302,23 @@ function EventRow({ event }: { event: SignalEvent }) {
       className={cn(
         "flex items-start gap-3 px-4 py-3",
         !event.read && "bg-amber/[0.04]",
-        event.provisional && "border-l-2 border-amber",
+        event.provisional && !event.cancelled && "border-l-2 border-amber",
+        event.cancelled && "border-l-2 border-dim bg-raised/40",
       )}
     >
       <span
         className={cn(
           "mt-0.5 flex size-6 shrink-0 items-center justify-center border",
-          entered
-            ? "border-up/40 bg-up/10 text-up"
-            : "border-down/40 bg-down/10 text-down",
+          event.cancelled
+            ? "border-dim/50 bg-raised text-muted"
+            : entered
+              ? "border-up/40 bg-up/10 text-up"
+              : "border-down/40 bg-down/10 text-down",
         )}
       >
-        {entered ? (
+        {event.cancelled ? (
+          <Undo2 className="size-3.5" />
+        ) : entered ? (
           <ArrowUpRight className="size-3.5" />
         ) : (
           <ArrowDownRight className="size-3.5" />
@@ -225,27 +328,58 @@ function EventRow({ event }: { event: SignalEvent }) {
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-baseline gap-x-2">
           <span className="tnum text-[13px] text-bright">{event.symbol}</span>
-          <span className={cn("text-[13px]", entered ? "text-up" : "text-down")}>
-            {event.provisional
-              ? entered
-                ? "BUY AT CLOSE"
-                : "SELL AT CLOSE"
-              : entered
-                ? "ENTERED"
-                : "EXITED"}
+          <span
+            className={cn(
+              "text-[13px]",
+              event.cancelled
+                ? "text-muted"
+                : entered
+                  ? "text-up"
+                  : "text-down",
+            )}
+          >
+            {event.cancelled
+              ? "STAND DOWN"
+              : event.provisional
+                ? entered
+                  ? "BUY AT CLOSE"
+                  : "SELL AT CLOSE"
+                : entered
+                  ? "ENTERED"
+                  : "EXITED"}
           </span>
-          {event.provisional ? <Tag tone="amber">act today</Tag> : null}
+          {event.cancelled ? (
+            <Tag tone="neutral">cancelled</Tag>
+          ) : event.provisional ? (
+            <Tag tone="amber">
+              act today
+              {event.minutesLeft !== undefined
+                ? ` · ${event.minutesLeft}m`
+                : ""}
+            </Tag>
+          ) : null}
           {!event.read ? <Tag tone="amber">new</Tag> : null}
         </span>
 
         <span className="prose-face mt-1 block text-[12px] leading-relaxed text-muted">
-          {event.provisional ? (
+          {event.cancelled ? (
+            <>
+              The earlier {entered ? "buy" : "sell"} alert on {meta.name} no
+              longer holds — {event.symbol} moved to{" "}
+              <span className="tnum text-text">{event.price.toFixed(2)}</span>{" "}
+              and the rule does not trigger at that price.{" "}
+              <span className="text-text">
+                Do not place the order, or cancel it if you already did.
+              </span>
+            </>
+          ) : event.provisional ? (
             <>
               {meta.name} · would {entered ? "enter" : "exit"} if today closed
               near{" "}
               <span className="tnum text-text">{event.price.toFixed(2)}</span>.
-              Send a market-on-close order before the bell to take that price.
-              Provisional — a late move can change it.
+              Send a market-on-close order before the cutoff to take that price.
+              Provisional — a late move can still change it, and you will get a
+              stand-down here if it does.
             </>
           ) : (
             <>

@@ -267,6 +267,64 @@ export default function GuidePage() {
               have one idea six times, and they will fail together.
             </p>
           </Section>
+
+          <Section n="10" title="When to actually place the trade">
+            <p>
+              Every strategy here reads the daily <Term>closing price</Term>.
+              That creates a timing problem most tools quietly ignore: by the
+              time the close exists, that price is gone. The backtest fills at
+              the close of the signal day, so a signal you read the next morning
+              is not the trade it measured.
+            </p>
+            <p>
+              The way this is traded in practice is to decide shortly before the
+              bell, using the current price as a stand-in for the close, and
+              send a <Term>market-on-close</Term> order — an order that fills at
+              the official closing price, whatever it turns out to be. That is
+              the same price every figure on the terminal is measured against.
+            </p>
+            <p>
+              Which leaves a narrow window, and both edges of it matter:
+            </p>
+            <ul className="ml-4 list-disc space-y-1.5 marker:text-amber">
+              <li>
+                <Term>Twenty minutes before the close</Term> the window opens
+                and the app will alert you. Earlier than that, a provisional
+                reading is a guess about hours of trading still to come — the
+                terminal will show it, but greyed out and labelled too early,
+                and no alert is sent. That restraint is the point.
+              </li>
+              <li>
+                <Term>Ten minutes before the close</Term> the exchange stops
+                accepting new on-close orders. After that the app stops
+                advising one, because it would be advising a trade that cannot
+                be placed.
+              </li>
+              <li>
+                <Term>If it changes its mind</Term>, you get a stand-down. A
+                price that moves back inside the window can un-trigger the rule,
+                and an alert that never gets withdrawn is worse than no alert —
+                it walks you into a trade the strategy does not want.
+              </li>
+            </ul>
+            <p>
+              These come from each venue&apos;s own calendar, so a New York
+              close puts the window at 3:40–3:50pm, London&apos;s at
+              4:10–4:20pm, and a half-day holiday shifts it automatically.
+              Crypto never closes, so none of it applies — the daily bar simply
+              rolls over at midnight UTC and there is no bell to trade into.
+            </p>
+            <p>
+              Two practical caveats. Your <em>broker</em> may stop accepting
+              on-close orders earlier than the exchange does, and plenty of
+              retail brokers do not offer them at all — check before you rely on
+              the last minute. And if you buy at tomorrow&apos;s open instead,
+              that is a legitimate choice but it is a{" "}
+              <em>different trade</em> than the one measured: an overnight gap
+              can move the price before you are filled, and nothing on these
+              pages accounts for that.
+            </p>
+          </Section>
         </div>
 
         <Panel className="mt-10">

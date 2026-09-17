@@ -17,9 +17,11 @@ import {
   Tag,
 } from "@/components/ui/terminal";
 import { CostControl } from "@/components/terminal/cost-control";
+import { TodayAction } from "@/components/terminal/today-action";
 import { TuningPanel } from "@/components/terminal/tuning-panel";
 import { getFactor, gradeIC, type AlphaResult } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
+import type { History, MarketContext } from "@/lib/symbols";
 import type { Bar } from "@/lib/types";
 import type { Params } from "@/lib/use-alpha";
 import { cn } from "@/lib/utils";
@@ -34,6 +36,8 @@ export function AdvancedView({
   sentimentMap,
   costBps,
   onCostChange,
+  history,
+  context,
 }: {
   result: AlphaResult;
   params: Params;
@@ -43,10 +47,25 @@ export function AdvancedView({
   sentimentMap?: Map<string, number>;
   costBps: number;
   onCostChange: (bps: number) => void;
+  history: History;
+  context: MarketContext | null;
 }) {
   return (
     <>
       <Verdict result={result} horizon={params.horizon} />
+
+      {/* The alerts fire in both modes, so the window they refer to has to be
+          explained in both. Placed above the research surface because it is
+          the only part of this page that is time-critical. */}
+      <div className="border-b border-line p-3">
+        <TodayAction
+          history={history}
+          context={context}
+          factor={params.factor}
+          param={params.param}
+          currentState={result.signal.state}
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-px bg-line lg:grid-cols-2">
         <Panel className="border-0">

@@ -2,16 +2,20 @@
 
 import * as React from "react";
 
-import { CHECK_INTERVAL_MS, checkSignals, shouldCheck } from "./notifications";
+import { ACTION_INTERVAL_MS, checkSignals, shouldCheck } from "./notifications";
 import { useWatchlist } from "./watchlist";
 
 /**
  * Runs a signal check in the background from anywhere in the app, so the bell
  * is meaningful on every page rather than only after visiting the watchlist.
  *
- * Throttled to one check per interval across the whole app — the underlying
- * history route is cached for an hour and signals only move on a daily close,
- * so checking more often would just burn requests.
+ * The cadence is adaptive rather than fixed. Most of the day a check every
+ * fifteen minutes is generous — daily signals move once a day and the history
+ * route is cached for an hour. But the pre-close window is only ten minutes
+ * wide, and a fixed fifteen-minute timer would routinely sleep straight
+ * through the one stretch of the day the alerts exist for. Each scan reports
+ * how soon it needs to run again, and the ticker below simply asks often
+ * enough to honour it.
  */
 export function useSignalWatch() {
   const { entries } = useWatchlist();
@@ -23,6 +27,8 @@ export function useSignalWatch() {
     let cancelled = false;
 
     const run = () => {
+      // shouldCheck() compares against the delay the last scan asked for, so
+      // polling on the short interval costs nothing when nothing is due.
       if (cancelled || !shouldCheck()) return;
       // Fire and forget: failures are already swallowed per-ticker inside.
       void checkSignals(entries);
@@ -30,7 +36,7 @@ export function useSignalWatch() {
 
     // Give first paint room to finish before firing network work.
     const initial = setTimeout(run, 1500);
-    const id = setInterval(run, CHECK_INTERVAL_MS);
+    const id = setInterval(run, ACTION_INTERVAL_MS);
 
     return () => {
       cancelled = true;

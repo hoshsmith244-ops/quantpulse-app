@@ -4,6 +4,50 @@ Every substantive change to QuantPulse, newest first. One entry per commit.
 
 ---
 
+## 2026-09-16 — The pre-close action window
+
+### Alerts now fire in the last twenty minutes, and only there
+
+The pre-close check previously fired at any point in the session, keyed by day.
+That meant you got the *least* reliable reading available — a provisional close
+computed at 10am is a guess about six more hours of trading — and then nothing
+afterwards, because the day was already marked as alerted.
+
+Alerts are now bounded at both ends:
+
+- **Window opens 20 minutes before the close** (3:40pm for a New York 4:00pm
+  bell). Watchlist names are re-run with the live price standing in for the
+  close, and a flip sends one alert carrying the minutes left to order.
+- **On-close cutoff 10 minutes before the close** (3:50pm). NYSE and Nasdaq
+  accept no new market-on-close or limit-on-close orders after this, so the app
+  stops advising one rather than advising a trade that would be rejected.
+- **Stand-down alerts.** If the price moves back and the rule stops triggering,
+  the earlier alert is withdrawn — untagged and requiring interaction, so it
+  cannot silently replace the alert it contradicts. An instruction that is never
+  taken back walks the user into a trade the strategy does not want, which is
+  worse than never alerting at all.
+- **Adaptive polling.** A flat 15-minute timer would routinely sleep straight
+  through a 10-minute window. Each scan reports how soon it needs to run again:
+  15 min at rest, 5 min within 45 minutes of a close, 2 min inside the window.
+
+Times come from each venue's own calendar rather than an assumed 16:00, so
+London's 4:30pm close puts the window at 4:10–4:20pm and half-day holidays shift
+automatically. Crypto is flagged `alwaysOpen` and gets its own copy — there is
+no bell to trade into.
+
+The terminal panel became a live countdown with four distinct states (too early
+/ act now / past the cutoff / settled), and now renders in **both** simple and
+advanced mode, since the alerts fire in both. Guide gains section 10 on when to
+actually place the trade.
+
+*Verified without waiting for 3:40pm:* `scripts/check-window.mts` drives the
+window and the alert state machine against fixed clocks — 37 checks covering
+phase boundaries, London, half-days, crypto, and a full minute-by-minute window
+including the alert-then-reverse case. The UI was checked by simulating each
+phase in the browser.
+
+---
+
 ## 2026-09-16 — Finding what to look at
 
 ### Screener

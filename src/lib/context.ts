@@ -48,14 +48,50 @@ function toSession(raw: string | undefined): Session {
 
 function toMs(v: unknown): number | null {
   if (v instanceof Date) return v.getTime();
+  if (typeof v === "string") {
+    const t = Date.parse(v);
+    return Number.isNaN(t) ? null : t;
+  }
   if (typeof v === "number") return v > 1e11 ? v : v * 1000;
   return null;
 }
 
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * When this venue's regular session ends, from the exchange's own calendar.
+ *
+ * Yahoo reports the current trading period per venue, which is the only way to
+ * get this right: 16:00 in New York, 16:30 in London, and 13:00 on a US
+ * half-day holiday. Anything hardcoded would be wrong somewhere.
+ */
+function sessionEnd(chart: unknown): { end: number | null; alwaysOpen: boolean } {
+  const meta = (chart as { meta?: Record<string, unknown> } | undefined)?.meta;
+  const period = (
+    meta?.currentTradingPeriod as
+      | { regular?: { start?: unknown; end?: unknown } }
+      | undefined
+  )?.regular;
+
+  const end = toMs(period?.end);
+  const start = toMs(period?.start);
+
+  // Crypto reports a ~24h "session", which is not a close anyone can trade
+  // into. Treat a session longer than 20 hours as a venue that never shuts.
+  const alwaysOpen =
+    end !== null && start !== null && end - start > 20 * 60 * 60 * 1000;
+
+  return { end, alwaysOpen };
+}
+
 export async function fetchContext(symbol: string): Promise<MarketContext> {
-  const [quoteRes, newsRes] = await Promise.allSettled([
+  // The chart call rides along in parallel purely for the venue's trading
+  // calendar: `quote` reports the last trade time but never the session END,
+  // and the pre-close window has to be measured against a real closing bell.
+  const [quoteRes, newsRes, chartRes] = await Promise.allSettled([
     yf.quote(symbol),
     yf.search(symbol, { newsCount: 10, quotesCount: 0 }),
+    yf.chart(symbol, { period1: todayIso(), interval: "1d" }),
   ]);
 
   let session: Session = "closed";
@@ -127,10 +163,16 @@ export async function fetchContext(symbol: string): Promise<MarketContext> {
       .slice(0, 8);
   }
 
+  const { end: regularEnd, alwaysOpen } = sessionEnd(
+    chartRes.status === "fulfilled" ? chartRes.value : undefined,
+  );
+
   return {
     symbol,
     session,
     timezone,
+    regularEnd,
+    alwaysOpen,
     regular,
     extended,
     driftPct,

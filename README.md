@@ -118,6 +118,47 @@ the guide warns about, two defences are on by default: results must survive a
 raised cost (25 bps) and a parameter shift of ±20%, and the page shows how many
 results chance alone would produce next to how many actually appeared.
 
+## The pre-close action window
+
+Every strategy reads the daily close, so by the time a signal exists the price
+it refers to is gone. The only way to take the trade the backtest measured is to
+decide shortly *before* the bell and send a market-on-close order.
+
+That window is bounded at both ends, and the app enforces both:
+
+| | US equities | What happens |
+| --- | --- | --- |
+| Window opens | 3:40pm | Watchlist alerts fire; the terminal shows a live countdown |
+| On-close cutoff | 3:50pm | Exchange stops accepting MOC/LOC orders — alerts stop too |
+| Close | 4:00pm | The bar settles; entries and exits are recorded for the record |
+
+Earlier in the session a provisional reading is a guess about hours of trading
+still to come, so it is shown but explicitly marked too early, and **no alert is
+sent**. That restraint is the feature — alerting all day would train people to
+act on noise.
+
+**Stand-downs.** If a price moves back inside the window and the rule stops
+triggering, the earlier alert is withdrawn. An alert that is never taken back
+walks the user into a trade the strategy does not want, which is worse than
+never alerting.
+
+Times come from each venue's own trading calendar
+(`currentTradingPeriod.regular.end`), not an assumed 16:00 — so London's 4:30pm
+close puts the window at 4:10–4:20pm and half-day holidays shift automatically.
+Crypto reports a 24-hour session and is flagged `alwaysOpen`, where none of this
+applies.
+
+The logic is time-dependent and alive for twenty minutes a day, so it is covered
+by a test rather than by looking at the running app:
+
+```bash
+node scripts/check-window.mts
+```
+
+These are *exchange* cutoffs. Brokers often impose earlier ones and some retail
+brokers do not offer on-close orders at all, which the UI says rather than
+assuming.
+
 ## Watchlist
 
 `/watchlist` scans every ticker you save in one pass and reports which are

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { actionWindow, decideAlert } from "./action-window";
 import { analyse, getFactor, type FactorId } from "./alpha";
 import { withProvisionalClose } from "./provisional";
 import type { History, MarketContext } from "./symbols";
@@ -24,9 +25,18 @@ const STATE_KEY = "qp:signal-state";
 const EVENTS_KEY = "qp:notifications";
 const PREFS_KEY = "qp:notify-prefs";
 const LAST_CHECK_KEY = "qp:last-check";
+const PENDING_KEY = "qp:pending-alerts";
+const NEXT_DELAY_KEY = "qp:next-delay";
 
-/** Don't re-scan more often than this when moving around the app. */
+/** Resting cadence, well away from any close. */
 export const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+/** Inside the pre-close window, where a flip has to be caught quickly. */
+export const ACTION_INTERVAL_MS = 2 * 60 * 1000;
+/** Approaching a close: tighten up so the window is not slept through. */
+export const APPROACH_INTERVAL_MS = 5 * 60 * 1000;
+/** How far out to start tightening, in minutes before the close. */
+const APPROACH_MIN = 45;
+
 const MAX_EVENTS = 60;
 
 export type SignalEvent = {
@@ -43,14 +53,29 @@ export type SignalEvent = {
   at: number;
   read: boolean;
   /**
-   * True for a pre-close alert: the rule WOULD trigger if today closed now.
-   * This is the actionable one — the settled event arrives after the close,
-   * by which time that price is gone.
+   * True for a pre-close alert: the rule WOULD trigger if today closed now,
+   * and there is still time to send an on-close order. This is the actionable
+   * one — the settled event arrives after the close, by which time that price
+   * is gone.
    */
   provisional?: boolean;
+  /**
+   * True for a stand-down: a provisional alert was sent earlier in the window
+   * and the rule no longer triggers.
+   *
+   * This is not a nicety. Alerting "buy at the close" and then going silent
+   * when the reason evaporates would make the system actively cause wrong
+   * trades — worse than sending no alert at all.
+   */
+  cancelled?: boolean;
+  /** Minutes left to place an on-close order when the alert was raised. */
+  minutesLeft?: number;
 };
 
 type SignalState = Record<string, { state: "in" | "out"; since: string }>;
+
+/** What we have already told the user to do today, so we can take it back. */
+type PendingAlerts = Record<string, { date: string; dir: "in" | "out" }>;
 
 const listeners = new Set<() => void>();
 let cachedEvents: SignalEvent[] | null = null;
@@ -140,6 +165,7 @@ export function refreshStore() {
 const keyOf = (e: { symbol: string; factor: FactorId }) =>
   `${e.symbol}:${e.factor}`;
 
+
 async function loadContext(symbol: string): Promise<MarketContext | null> {
   try {
     const res = await fetch(`/api/context?symbol=${encodeURIComponent(symbol)}`);
@@ -170,12 +196,19 @@ async function loadHistory(symbol: string): Promise<History | null> {
 export async function checkSignals(
   entries: WatchEntry[],
 ): Promise<SignalEvent[]> {
-  if (entries.length === 0) return [];
+  if (entries.length === 0) {
+    writeJson(NEXT_DELAY_KEY, CHECK_INTERVAL_MS);
+    return [];
+  }
 
   const previous = readJson<SignalState>(STATE_KEY, {});
+  const pendingBefore = readJson<PendingAlerts>(PENDING_KEY, {});
   const isFirstRun = Object.keys(previous).length === 0;
   const nextState: SignalState = {};
+  const nextPending: PendingAlerts = {};
   const fresh: SignalEvent[] = [];
+  /** Tightest polling cadence any watched name asked for this pass. */
+  let soonest = CHECK_INTERVAL_MS;
 
   // Six at a time, matching the watchlist scan.
   const queue = [...entries];
@@ -204,15 +237,29 @@ export async function checkSignals(
 
       nextState[k] = { state: signal.state, since };
 
-      // Pre-close alert. While the session is still open, re-run the rule with
-      // the live price standing in for today's close: if it would flip, there
-      // is still time to act at the price the backtest assumes. Keyed by the
-      // day so it fires once, not every fifteen minutes.
+      // --- The pre-close window ------------------------------------------
+      //
+      // Alerts fire ONLY inside it. Earlier in the session a provisional
+      // close is a guess about hours of trading still to come, and alerting
+      // on it teaches people to act on noise; later, on-close orders are no
+      // longer accepted, so there is nothing useful left to say.
+      const win = actionWindow(context ?? null);
       const livePrice = context?.regular?.price;
-      const openNow =
-        context?.session === "regular" || context?.session === "pre";
 
-      if (openNow && livePrice) {
+      // Keep the fastest cadence any watched name needs.
+      if (win.phase === "action" || win.phase === "final") {
+        soonest = Math.min(soonest, ACTION_INTERVAL_MS);
+      } else if (
+        win.phase === "early" &&
+        win.minutesToClose !== null &&
+        win.minutesToClose <= APPROACH_MIN
+      ) {
+        soonest = Math.min(soonest, APPROACH_INTERVAL_MS);
+      }
+
+      const priorAlert = pendingBefore[k];
+
+      if (win.actionable && livePrice) {
         const provisionalBars = withProvisionalClose(
           history.bars,
           livePrice,
@@ -225,20 +272,48 @@ export async function checkSignals(
           5,
         ).signal.state;
 
-        if (provisional !== signal.state) {
-          const today = provisionalBars[provisionalBars.length - 1].date;
+        const today = provisionalBars[provisionalBars.length - 1].date;
+        const decision = decideAlert({
+          actionable: true,
+          changing: provisional !== signal.state,
+          provisional,
+          today,
+          prior: priorAlert ?? null,
+        });
+
+        if (decision.pending) nextPending[k] = decision.pending;
+
+        if (decision.emit) {
+          const cancelled = decision.emit === "stand-down";
+          // A stand-down reports the direction being withdrawn, which is the
+          // prior instruction, not the current (unchanged) reading.
+          const dir = cancelled ? (priorAlert?.dir ?? provisional) : provisional;
+
           fresh.push({
-            id: `${k}:pending-${provisional}:${today}`,
+            id: `${k}:${cancelled ? "standdown" : "act"}-${dir}:${today}`,
             symbol: entry.symbol,
             factor: entry.factor,
-            kind: provisional === "in" ? "entry" : "exit",
+            kind: dir === "in" ? "entry" : "exit",
             date: today,
             price: livePrice,
             at: Date.now(),
             read: false,
             provisional: true,
+            ...(cancelled ? { cancelled: true } : {}),
+            minutesLeft: Math.round(win.minutesToCutoff ?? 0),
           });
         }
+      } else {
+        // Outside the window nothing is re-evaluated, but today's instruction
+        // is remembered so a later check can still stand it down.
+        const decision = decideAlert({
+          actionable: false,
+          changing: false,
+          provisional: signal.state,
+          today: history.bars[history.bars.length - 1].date,
+          prior: priorAlert ?? null,
+        });
+        if (decision.pending) nextPending[k] = decision.pending;
       }
 
       const before = previous[k];
@@ -280,6 +355,8 @@ export async function checkSignals(
   await Promise.all(Array.from({ length: Math.min(6, entries.length) }, worker));
 
   writeJson(STATE_KEY, nextState);
+  writeJson(PENDING_KEY, nextPending);
+  writeJson(NEXT_DELAY_KEY, soonest);
   writeJson(LAST_CHECK_KEY, Date.now());
 
   if (fresh.length) {
@@ -297,9 +374,23 @@ export async function checkSignals(
   return [];
 }
 
+/**
+ * How long to wait before the next scan.
+ *
+ * Set by the previous scan from what it saw: a flat fifteen minutes would
+ * comfortably sleep through a ten-minute action window, which is the one
+ * stretch of the day the alerts exist for.
+ */
+export function nextDelayMs(): number {
+  const v = readJson<number>(NEXT_DELAY_KEY, CHECK_INTERVAL_MS);
+  return Number.isFinite(v)
+    ? Math.min(CHECK_INTERVAL_MS, Math.max(ACTION_INTERVAL_MS, v))
+    : CHECK_INTERVAL_MS;
+}
+
 export function shouldCheck(): boolean {
   const last = readJson<number>(LAST_CHECK_KEY, 0);
-  return Date.now() - last > CHECK_INTERVAL_MS;
+  return Date.now() - last > nextDelayMs();
 }
 
 function maybeShowBrowserNotification(events: SignalEvent[]) {
@@ -308,22 +399,45 @@ function maybeShowBrowserNotification(events: SignalEvent[]) {
     return;
   }
 
-  // One combined notification rather than a burst of them.
-  const title =
-    events.length === 1
-      ? `${events[0].symbol} — ${events[0].kind === "entry" ? "entry signal" : "exit signal"}`
-      : `${events.length} signal changes`;
+  /** A stand-down must never read like an instruction to trade. */
+  const line = (e: SignalEvent) => {
+    const name = getFactor(e.factor).name.toLowerCase();
+    if (e.cancelled) {
+      return `${e.symbol}: stand down — ${name} no longer triggers`;
+    }
+    if (e.provisional) {
+      const verb = e.kind === "entry" ? "BUY" : "SELL";
+      return `${e.symbol}: ${verb} at the close — ${e.minutesLeft ?? 0}m left to order`;
+    }
+    return `${e.symbol}: ${e.kind === "entry" ? "entered" : "exited"} ${name}`;
+  };
 
-  const body = events
-    .slice(0, 4)
-    .map(
-      (e) =>
-        `${e.symbol}: ${e.kind === "entry" ? "entered" : "exited"} ${getFactor(e.factor).name.toLowerCase()}`,
-    )
-    .join("\n");
+  // Cancellations lead: they are the time-critical ones, because the user may
+  // be part-way through placing the trade being taken back.
+  const ordered = [...events].sort(
+    (a, b) => Number(!!b.cancelled) - Number(!!a.cancelled),
+  );
+  const first = ordered[0];
+
+  const title =
+    ordered.length > 1
+      ? `${ordered.length} signal changes`
+      : first.cancelled
+        ? `${first.symbol} — stand down`
+        : first.provisional
+          ? `${first.symbol} — act before the close`
+          : `${first.symbol} — ${first.kind === "entry" ? "entry signal" : "exit signal"}`;
+
+  const body = ordered.slice(0, 4).map(line).join("\n");
 
   try {
-    new Notification(title, { body, tag: "qp-signals" });
+    // Untagged when time-critical, so a stand-down cannot silently replace the
+    // alert it contradicts before the user has read either one.
+    new Notification(title, {
+      body,
+      tag: ordered.some((e) => e.provisional) ? undefined : "qp-signals",
+      requireInteraction: ordered.some((e) => e.cancelled),
+    });
   } catch {
     // Some browsers require a service worker; failing silently is fine.
   }

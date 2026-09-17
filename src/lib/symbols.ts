@@ -67,6 +67,17 @@ export type MarketContext = {
   symbol: string;
   session: Session;
   timezone: string;
+  /**
+   * Epoch ms when this venue's regular session ends, taken from the exchange's
+   * own calendar rather than assumed.
+   *
+   * Assuming 16:00 local would be wrong for London (16:30), wrong for every
+   * half-day holiday close, and meaningless for crypto. The pre-close window
+   * is measured against this.
+   */
+  regularEnd: number | null;
+  /** Venue with no meaningful close — crypto. There is no bell to beat. */
+  alwaysOpen: boolean;
   regular: { price: number; changePct: number; at: number } | null;
   extended: {
     price: number;

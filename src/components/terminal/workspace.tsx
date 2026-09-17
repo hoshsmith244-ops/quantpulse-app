@@ -122,6 +122,8 @@ export function Workspace() {
               sentimentMap={sentimentMap}
               costBps={params.costBps}
               onCostChange={(bps) => set("costBps", bps)}
+              history={state.history}
+              context={context}
             />
           </div>
         </div>
