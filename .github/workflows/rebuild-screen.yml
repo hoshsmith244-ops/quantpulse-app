@@ -1,0 +1,83 @@
+name: Rebuild screener
+
+# Regenerates public/screen.json after the US close and commits it, which in
+# turn triggers a Vercel deploy.
+#
+# TIMING IS DELIBERATELY LOOSE. GitHub's scheduled runs are routinely delayed
+# by several minutes and occasionally much longer, which would be fatal for the
+# pre-close alerts but does not matter here: the screen only has to be rebuilt
+# some time after the bell. 21:30 UTC is 17:30 during EDT and 16:30 during EST,
+# so it lands after the 16:00 close year-round and a delay only makes it later.
+#
+# On a holiday the scan simply reproduces the previous trading day's data and
+# the commit step finds nothing to commit, so no special calendar is needed.
+
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"
+  # So it can be run by hand after a failure, or to pick up a universe change.
+  workflow_dispatch:
+
+# Least privilege: the job only needs to push the regenerated data file.
+permissions:
+  contents: write
+
+concurrency:
+  group: rebuild-screen
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    # The scan makes ~550 upstream requests; well under this, but a hung
+    # provider should not burn an hour of the runner.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild the screener dataset
+        run: node scripts/build-screen.mts
+
+      - name: Verify the result before committing
+        # A truncated or stale file is worse than no rebuild at all, because it
+        # would deploy silently. Fail loudly instead.
+        run: |
+          node -e "
+            const fs = require('fs');
+            const d = JSON.parse(fs.readFileSync('public/screen.json', 'utf8'));
+            const problems = [];
+            if (!d.asOf || !/^\d{4}-\d{2}-\d{2}$/.test(d.asOf)) problems.push('asOf missing or malformed: ' + d.asOf);
+            if (!(d.pairs > 500)) problems.push('only ' + d.pairs + ' pairs');
+            if (!(d.universe > 150)) problems.push('only ' + d.universe + ' tickers');
+            if (!d.rows || d.rows.length !== d.pairs) problems.push('rows do not match the pair count');
+            // A build where everything failed to download would still be valid
+            // JSON, so check the data actually says something.
+            const significant = d.rows.filter(r => Math.abs(r.t) >= 2).length;
+            if (significant < 50) problems.push('only ' + significant + ' significant pairs — upstream probably failed');
+            if (problems.length) { console.error('REFUSING TO COMMIT:\n  ' + problems.join('\n  ')); process.exit(1); }
+            console.log('ok: ' + d.universe + ' tickers, ' + d.pairs + ' pairs, as of ' + d.asOf);
+          "
+
+      - name: Commit if the data changed
+        run: |
+          if git diff --quiet -- public/screen.json; then
+            echo "No change — the market data is identical to the last build."
+            exit 0
+          fi
+          AS_OF=$(node -e "process.stdout.write(require('./public/screen.json').asOf)")
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/screen.json
+          git commit -m "Rebuild screener on ${AS_OF} closes
+
+          Automated by .github/workflows/rebuild-screen.yml."
+          git push
