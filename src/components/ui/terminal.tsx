@@ -27,9 +27,13 @@ export function PanelHead({
   className?: string;
 }) {
   return (
+    // Wraps rather than overflowing. A `shrink-0` right slot can never wrap
+    // itself, so a header carrying both a long tag and a control pushed the
+    // control off the screen on a phone — silently, since the page had no
+    // horizontal scroll to reveal it.
     <div
       className={cn(
-        "flex items-center justify-between gap-3 border-b border-line bg-raised/50 px-3 py-1.5",
+        "flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line bg-raised/50 px-3 py-1.5",
         className,
       )}
     >
@@ -37,7 +41,11 @@ export function PanelHead({
         <span className="text-amber">/</span>
         <span className="truncate">{title}</span>
       </span>
-      {right ? <span className="shrink-0">{right}</span> : null}
+      {right ? (
+        <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {right}
+        </span>
+      ) : null}
     </div>
   );
 }

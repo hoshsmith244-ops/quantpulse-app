@@ -479,6 +479,48 @@ export function bucketCounts(data: ScreenData): BucketCounts {
   return counts;
 }
 
+/**
+ * Weekdays elapsed since the screen was built.
+ *
+ * Calendar days would cry stale every Monday about a perfectly current Friday
+ * build, which trains people to ignore the warning. Counting weekdays is not
+ * a holiday calendar, but it is right the other 250 days a year and costs
+ * nothing.
+ */
+export function sessionsSince(asOf: string, now: Date = new Date()): number {
+  const start = new Date(`${asOf}T00:00:00Z`);
+  if (Number.isNaN(start.getTime())) return 0;
+
+  let count = 0;
+  const cursor = new Date(start);
+  const end = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+
+  while (cursor < end) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    const day = cursor.getUTCDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return count;
+}
+
+/**
+ * How much to trust a screen of this age.
+ *
+ * The signals move on the daily close, so one session behind is simply normal
+ * between builds. Beyond that the entry and exit states on the page are
+ * describing a market that has since moved on, which is worth saying loudly on
+ * a tool whose purpose is deciding what to do today.
+ */
+export function stalenessOf(asOf: string, now: Date = new Date()) {
+  const sessions = sessionsSince(asOf, now);
+  return {
+    sessions,
+    level: sessions <= 1 ? ("fresh" as const) : sessions <= 4 ? ("aging" as const) : ("stale" as const),
+  };
+}
+
 /** Sectors present in the data, sorted, for the picker. */
 export function sectorsOf(data: ScreenData): string[] {
   const set = new Set<string>();

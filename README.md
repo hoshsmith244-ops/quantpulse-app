@@ -24,7 +24,8 @@ Then open <http://localhost:3000>.
 | `npm run dev` | Dev server on port 3000 |
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
-| `npm run check` | typecheck + lint + build |
+| `npm run test` | Bar hygiene, pre-close window, and sync merge suites |
+| `npm run check` | typecheck + lint + test + build |
 | `npm run deploy` | Pre-deploy gate, then commit and push (Git Bash) |
 
 ## Pages

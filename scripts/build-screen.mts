@@ -38,6 +38,7 @@ import {
   verdict,
   type FactorId,
 } from "../src/lib/alpha.ts";
+import { dropInProgressBar } from "../src/lib/bars.ts";
 import type { Bar } from "../src/lib/types.ts";
 
 const yf = new YahooFinance({
@@ -167,6 +168,11 @@ async function fetchBars(symbol: string) {
       close: q.close as number,
       volume: q.volume ?? 0,
     }));
+
+  // Same hygiene as the live fetch: a session still in progress is not a
+  // close, and building the whole screen on one would bake phantom entries
+  // into every row.
+  dropInProgressBar(bars, res.meta, tz);
 
   if (bars.length < 260) throw new Error("too few bars");
 

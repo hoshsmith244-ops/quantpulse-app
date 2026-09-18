@@ -2,6 +2,7 @@ import "server-only";
 
 import YahooFinance from "yahoo-finance2";
 
+import { dropInProgressBar } from "./bars";
 import type { History } from "./symbols";
 import type { Bar } from "./types";
 
@@ -16,58 +17,6 @@ const yf = new YahooFinance({
   suppressNotices: ["yahooSurvey"],
   validation: { logErrors: false },
 });
-
-function toMs(v: unknown): number | null {
-  if (v instanceof Date) return v.getTime();
-  if (typeof v === "string") {
-    const t = Date.parse(v);
-    return Number.isNaN(t) ? null : t;
-  }
-  if (typeof v === "number") return v > 1e11 ? v : v * 1000;
-  return null;
-}
-
-/**
- * Removes the bar for a session that has not finished yet.
- *
- * Yahoo reports the CURRENT session as a daily row whose `close` is simply the
- * latest trade. It is indistinguishable in shape from a finished bar, and every
- * strategy here is defined on the daily CLOSE — so leaving it in means the
- * whole app silently treats an intraday price as a settled close.
- *
- * That is not cosmetic. It fabricates entries and exits that never happened:
- * a rule reads "entered today" at 2pm, and the entry evaporates when the real
- * close lands somewhere else. It also disabled the pre-close alerts entirely,
- * because the "settled" signal already contained today's live price, so the
- * provisional re-run could never differ from it and no flip was ever detected.
- *
- * The venue's own session end decides: while the market is still open, today's
- * row is in progress and goes. After the bell it is a real close and stays.
- * Crypto reports a ~24h session, so its current day is always in progress —
- * which is correct, as that bar only settles at midnight UTC.
- */
-function dropInProgressBar(
-  bars: Bar[],
-  meta: { currentTradingPeriod?: { regular?: { end?: unknown } } },
-  exchangeTz: string,
-) {
-  const sessionEnd = toMs(meta.currentTradingPeriod?.regular?.end);
-
-  let today: string;
-  try {
-    today = new Date().toLocaleDateString("en-CA", { timeZone: exchangeTz });
-  } catch {
-    today = new Date().toISOString().slice(0, 10);
-  }
-
-  // Without a session end there is no way to tell an in-progress bar from a
-  // settled one, so drop today's either way: being a day behind is a far
-  // cheaper error than inventing a close.
-  const stillOpen = sessionEnd === null || Date.now() < sessionEnd;
-  if (!stillOpen) return;
-
-  while (bars.length > 0 && bars[bars.length - 1].date >= today) bars.pop();
-}
 
 export class SymbolNotFound extends Error {
   constructor(symbol: string) {

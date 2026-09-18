@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowRight,
   ChevronDown,
   ChevronUp,
@@ -39,6 +40,7 @@ import {
   liquidityBucket,
   sectorsOf,
   sortRows,
+  stalenessOf,
   type CapBucket,
   type Filters,
   type LiquidityBucket,
@@ -585,6 +587,9 @@ function Header({ data }: { data: ScreenData }) {
   // The same shared preference the terminal writes, so switching here switches
   // there too rather than creating a second, conflicting notion of "advanced".
   const [mode, setMode] = useMode();
+  // Computed once on mount rather than per render; the answer only changes
+  // when the date does.
+  const stale = React.useMemo(() => stalenessOf(data.asOf), [data.asOf]);
   const total = data.pairs;
   // A correlation test at |t| >= 2 clears by luck about 4.6% of the time.
   const byChance = Math.round(total * 0.0455);
@@ -605,7 +610,8 @@ function Header({ data }: { data: ScreenData }) {
         title="Screener"
         right={
           <span className="flex items-center gap-2.5">
-            <Tag tone="neutral">
+            <Tag tone={stale.level === "fresh" ? "neutral" : stale.level === "aging" ? "amber" : "down"}>
+              {stale.level !== "fresh" ? <AlertTriangle className="size-2.5" /> : null}
               as of{" "}
               {new Date(`${data.asOf}T00:00:00Z`).toLocaleDateString("en-US", {
                 day: "numeric",
@@ -613,6 +619,7 @@ function Header({ data }: { data: ScreenData }) {
                 year: "numeric",
                 timeZone: "UTC",
               })}
+              {stale.sessions > 1 ? ` · ${stale.sessions} sessions ago` : null}
             </Tag>
             {/* Same preference the terminal uses, so the two stay in step. */}
             <ModeToggle mode={mode} onChange={setMode} />
@@ -635,6 +642,36 @@ function Header({ data }: { data: ScreenData }) {
           sub={`vs ~${fmtInt(byChance)} expected by luck`}
         />
       </div>
+      {stale.level !== "fresh" ? (
+        <div
+          className={cn(
+            "flex items-start gap-2 border-t px-4 py-2.5",
+            stale.level === "stale"
+              ? "border-down/40 bg-down/[0.06]"
+              : "border-amber/30 bg-amber/[0.06]",
+          )}
+        >
+          <AlertTriangle
+            className={cn(
+              "mt-0.5 size-3.5 shrink-0",
+              stale.level === "stale" ? "text-down" : "text-amber",
+            )}
+          />
+          <p className="prose-face text-[12px] leading-relaxed text-text">
+            <span className={stale.level === "stale" ? "text-down" : "text-amber"}>
+              This screen is {stale.sessions} trading sessions old.
+            </span>{" "}
+            Entry and exit states move on the daily close, so the{" "}
+            <span className="text-bright">holding</span> and{" "}
+            <span className="text-bright">flat</span> labels below describe a
+            market that has since moved on — the returns and statistics age far
+            more slowly than those do. Rebuild it after a close with{" "}
+            <code className="text-muted">node scripts/build-screen.mts</code>,
+            or open a row in the terminal, which always fetches live.
+          </p>
+        </div>
+      ) : null}
+
       <p className="prose-face border-t border-line px-4 py-2.5 text-[12px] leading-relaxed text-dim">
         Every strategy run at its default setting on {data.years} years of daily
         closes, charged {data.costBps} bps a round trip — the same numbers you
