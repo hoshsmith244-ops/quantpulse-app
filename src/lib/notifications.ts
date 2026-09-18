@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { actionWindow, decideAlert } from "./action-window";
+import { todayAtVenue } from "./bars";
 import { analyse, getFactor, type FactorId } from "./alpha";
 import { withProvisionalClose } from "./provisional";
 import type { History, MarketContext } from "./symbols";
@@ -313,8 +314,14 @@ export async function checkSignals(
 
       // Record that the window was genuinely evaluated, so a quiet day can be
       // told apart from a day the app was never open for.
+      //
+      // Keyed to the venue's CURRENT date, not the last completed bar. Inside
+      // the window today's bar does not exist yet, so the newest bar is
+      // yesterday's — stamping the log with that would make the status panel
+      // compare it against today, find no match, and report "not checked"
+      // every single day it actually ran.
       if (win.actionable) {
-        windowDate = history.bars[history.bars.length - 1]?.date ?? windowDate;
+        windowDate = todayAtVenue(history.quote.timezone);
         sawWindow = true;
       }
 
