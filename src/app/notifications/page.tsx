@@ -15,6 +15,7 @@ import Link from "next/link";
 import * as React from "react";
 
 import { AppShell } from "@/components/shell/app-shell";
+import { WindowStatus } from "@/components/shell/window-status";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { ACTION_LEAD_MIN, MOC_CUTOFF_MIN } from "@/lib/action-window";
@@ -153,6 +154,8 @@ export default function NotificationsPage() {
             </>
           )}
         </Panel>
+
+        <WindowStatus watching={entries.length} />
 
         {/* Browser notifications */}
         <Panel>

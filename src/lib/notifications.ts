@@ -27,6 +27,7 @@ const PREFS_KEY = "qp:notify-prefs";
 const LAST_CHECK_KEY = "qp:last-check";
 const PENDING_KEY = "qp:pending-alerts";
 const NEXT_DELAY_KEY = "qp:next-delay";
+const WINDOW_LOG_KEY = "qp:window-log";
 
 /** Resting cadence, well away from any close. */
 export const CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -77,6 +78,52 @@ type SignalState = Record<string, { state: "in" | "out"; since: string }>;
 /** What we have already told the user to do today, so we can take it back. */
 type PendingAlerts = Record<string, { date: string; dir: "in" | "out" }>;
 
+/**
+ * Proof that the pre-close window was actually evaluated today.
+ *
+ * Silence from an alerting system has three possible meanings — the rule said
+ * no, nobody ever asked it, or something is broken — and they are
+ * indistinguishable without a record like this. That ambiguity is not
+ * hypothetical: a scan returning zero signals across 54 pairs was read as a
+ * quiet day when in fact alerts could not fire at all.
+ *
+ * Deliberately NOT a notification. Most days nothing triggers, so a daily
+ * "nothing happened" push would be the bulk of all notifications and would
+ * train people to ignore the bell. This is a status the app can show when
+ * asked, which is a different thing.
+ */
+export type WindowLog = {
+  /** Venue date the window belonged to. */
+  date: string;
+  /** Checks performed inside the action window today. */
+  checks: number;
+  /** Alerts raised today, so "checked and quiet" reads differently to "fired". */
+  fired: number;
+  firstCheckAt: number | null;
+  lastCheckAt: number | null;
+};
+
+/**
+ * Cached because useSyncExternalStore demands a referentially stable snapshot.
+ * JSON.parse hands back a fresh object every call, which React sees as a new
+ * value on every render and loops until it gives up with "Maximum update depth
+ * exceeded". The same reason the events list is cached.
+ */
+let cachedWindowLog: WindowLog | null | undefined;
+
+export function getWindowLog(): WindowLog | null {
+  if (cachedWindowLog !== undefined) return cachedWindowLog;
+  const log = readJson<WindowLog | null>(WINDOW_LOG_KEY, null);
+  cachedWindowLog = log && typeof log.date === "string" ? log : null;
+  return cachedWindowLog;
+}
+
+function commitWindowLog(next: WindowLog) {
+  cachedWindowLog = next;
+  writeJson(WINDOW_LOG_KEY, next);
+  notify();
+}
+
 const listeners = new Set<() => void>();
 let cachedEvents: SignalEvent[] | null = null;
 
@@ -115,6 +162,9 @@ export function subscribeStore(cb: () => void) {
   const onStorage = (e: StorageEvent) => {
     if (e.key === EVENTS_KEY) {
       cachedEvents = null;
+      cb();
+    } else if (e.key === WINDOW_LOG_KEY) {
+      cachedWindowLog = undefined;
       cb();
     }
   };
@@ -209,6 +259,9 @@ export async function checkSignals(
   const fresh: SignalEvent[] = [];
   /** Tightest polling cadence any watched name asked for this pass. */
   let soonest = CHECK_INTERVAL_MS;
+  /** Whether this pass actually evaluated anything inside the action window. */
+  let sawWindow = false;
+  let windowDate = "";
 
   // Six at a time, matching the watchlist scan.
   const queue = [...entries];
@@ -257,6 +310,13 @@ export async function checkSignals(
       // longer accepted, so there is nothing useful left to say.
       const win = actionWindow(context ?? null);
       const livePrice = context?.regular?.price;
+
+      // Record that the window was genuinely evaluated, so a quiet day can be
+      // told apart from a day the app was never open for.
+      if (win.actionable) {
+        windowDate = history.bars[history.bars.length - 1]?.date ?? windowDate;
+        sawWindow = true;
+      }
 
       // Keep the fastest cadence any watched name needs.
       if (win.phase === "action" || win.phase === "final") {
@@ -365,6 +425,21 @@ export async function checkSignals(
   };
 
   await Promise.all(Array.from({ length: Math.min(6, entries.length) }, worker));
+
+  if (sawWindow) {
+    const now = Date.now();
+    const prior = getWindowLog();
+    // A new venue date starts a fresh log; yesterday's count would otherwise
+    // read as today's evidence.
+    const carry = prior && prior.date === windowDate ? prior : null;
+    commitWindowLog({
+      date: windowDate,
+      checks: (carry?.checks ?? 0) + 1,
+      fired: (carry?.fired ?? 0) + fresh.length,
+      firstCheckAt: carry?.firstCheckAt ?? now,
+      lastCheckAt: now,
+    });
+  }
 
   writeJson(STATE_KEY, nextState);
   writeJson(PENDING_KEY, nextPending);
