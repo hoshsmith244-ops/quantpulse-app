@@ -31,6 +31,7 @@ import {
   useNotifications,
   type SignalEvent,
 } from "@/lib/notifications";
+import { useAccount } from "@/lib/use-account";
 import { useWatchlist } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +72,14 @@ export default function NotificationsPage() {
     getPermission,
     () => "default" as const,
   );
+  const emailOn = React.useSyncExternalStore(
+    subscribeStore,
+    () => getPrefs().email === true,
+    () => false,
+  );
+  // The email job needs an account: it runs on a server and has to know where
+  // to send the message.
+  const { session, email } = useAccount();
 
   const toggleBrowser = async () => {
     if (browserOn) {
@@ -184,6 +193,53 @@ export default function NotificationsPage() {
                 <BellOff className="mt-0.5 size-3 shrink-0" />
                 Your browser has blocked notifications for this site. Re-enable
                 them in the site permissions, then come back.
+              </p>
+            ) : null}
+
+            {/* The only delivery that survives a closed tab. */}
+            <div className="flex items-start justify-between gap-6 border-t border-line pt-3">
+              <div>
+                <p className="text-[13px] text-bright">
+                  Email during the pre-close window
+                </p>
+                <p className="prose-face mt-1 max-w-lg text-[12px] leading-relaxed text-muted">
+                  A scheduled job checks your watchlist at{" "}
+                  {ACTION_LEAD_MIN} minutes to the bell and emails you if a rule
+                  would trigger — <span className="text-bright">whether or
+                  not anything is open</span>. The only alert here that reaches
+                  you when the app is shut.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant={emailOn ? "primary" : "outline"}
+                onClick={() => setPrefs({ ...getPrefs(), email: !emailOn })}
+                disabled={!session}
+              >
+                {emailOn ? "On" : "Turn on"}
+              </Button>
+            </div>
+
+            {!session ? (
+              <p className="prose-face flex items-start gap-2 text-[11px] leading-relaxed text-dim">
+                <Info className="mt-0.5 size-3 shrink-0" />
+                <span>
+                  Requires an account — the job runs on a server and has to know
+                  where to send it. Sign in on the{" "}
+                  <Link href="/membership" className="text-amber hover:underline">
+                    membership page
+                  </Link>
+                  .
+                </span>
+              </p>
+            ) : emailOn ? (
+              <p className="prose-face flex items-start gap-2 text-[11px] leading-relaxed text-dim">
+                <Info className="mt-0.5 size-3 shrink-0" />
+                <span>
+                  Sending to <span className="text-muted">{email}</span>. The
+                  setting travels with your account, so it applies no matter
+                  which device you set it on.
+                </span>
               </p>
             ) : null}
 

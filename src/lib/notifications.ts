@@ -186,10 +186,20 @@ function commitEvents(next: SignalEvent[]) {
 // Preferences
 // ---------------------------------------------------------------------------
 
-export type NotifyPrefs = { browser: boolean };
+export type NotifyPrefs = {
+  browser: boolean;
+  /**
+   * Server-sent email during the pre-close window.
+   *
+   * Off by default and synced with the rest of the preferences, because the
+   * scheduled job reads it from the stored state rather than from this
+   * browser — switching it on here is what opts the account in.
+   */
+  email?: boolean;
+};
 
 export function getPrefs(): NotifyPrefs {
-  return readJson<NotifyPrefs>(PREFS_KEY, { browser: false });
+  return readJson<NotifyPrefs>(PREFS_KEY, { browser: false, email: false });
 }
 
 export function setPrefs(p: NotifyPrefs) {
