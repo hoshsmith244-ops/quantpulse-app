@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { probePreClose, runPreClosePass } from "@/lib/cron/pre-close";
@@ -51,12 +53,25 @@ async function handle(request: Request) {
    * not allowed to do this" — sends you looking in entirely the wrong place.
    */
   if (new URL(request.url).searchParams.has("health")) {
+    const secret = process.env.CRON_SECRET ?? "";
     return NextResponse.json(
       {
-        cronSecretSet: Boolean(process.env.CRON_SECRET),
+        cronSecretSet: Boolean(secret),
         supabaseAdminSet: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
         emailSet: Boolean(process.env.RESEND_API_KEY),
-        note: "true means the deployment has that variable. Values are never returned.",
+        // Length and a truncated hash, so a mismatch can be pinned down
+        // without either side revealing the secret. The length alone catches
+        // the common failure — a trailing newline dragged in when pasting into
+        // a dashboard field, which silently becomes part of the value.
+        //
+        // Safe to publish: finding a preimage means breaking 192 bits of
+        // entropy, and a 32-bit collision does not help because the real
+        // comparison is against the full string.
+        cronSecretLength: secret.length,
+        cronSecretFingerprint: secret
+          ? createHash("sha256").update(secret).digest("hex").slice(0, 8)
+          : null,
+        note: "Values are never returned. Compare the fingerprint against your own copy.",
       },
       { status: 200, headers: { "Cache-Control": "no-store" } },
     );
