@@ -40,6 +40,28 @@ function authorised(request: Request): boolean {
 }
 
 async function handle(request: Request) {
+  /**
+   * Unauthenticated setup check. Reports ONLY whether each variable is
+   * present — never a value, never any user data.
+   *
+   * Worth the small disclosure because a 401 has three very different causes:
+   * the secret is missing from the deployment, the deployment predates the
+   * variables being set, or the caller simply typed it wrong. Without this
+   * they are indistinguishable, and the natural conclusion — "my machine is
+   * not allowed to do this" — sends you looking in entirely the wrong place.
+   */
+  if (new URL(request.url).searchParams.has("health")) {
+    return NextResponse.json(
+      {
+        cronSecretSet: Boolean(process.env.CRON_SECRET),
+        supabaseAdminSet: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+        emailSet: Boolean(process.env.RESEND_API_KEY),
+        note: "true means the deployment has that variable. Values are never returned.",
+      },
+      { status: 200, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   if (!authorised(request)) {
     return NextResponse.json(
       { error: "unauthorised" },
