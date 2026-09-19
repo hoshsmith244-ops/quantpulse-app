@@ -53,6 +53,124 @@ export type PreCloseResult = {
   errors?: string[];
 };
 
+export type ProbeResult = {
+  marketWindow: { phase: string; actionable: boolean; minutesToClose: number | null };
+  sessionDate: string;
+  supabase: { configured: boolean; canRead: boolean; error?: string };
+  accounts: { total: number; withWatchlist: number; emailAlertsOn: number };
+  alertLog: { readable: boolean; rowsToday: number; error?: string };
+  email: { configured: boolean; sentTestTo?: string; error?: string };
+  ready: boolean;
+  blocking: string[];
+};
+
+/**
+ * Setup diagnostic.
+ *
+ * The real pass returns early outside the window, which is correct but means
+ * the Supabase and email wiring cannot be checked until the ten minutes it
+ * actually runs. That is a miserable way to discover a typo in a key, so this
+ * exercises every dependency on demand and reports exactly what is missing.
+ *
+ * `sendTest` additionally puts one clearly-marked sample email through the real
+ * sending path, which is the only way to prove deliverability before the day it
+ * matters.
+ */
+export async function probePreClose(sendTest = false): Promise<ProbeResult> {
+  const blocking: string[] = [];
+
+  const clock = await fetchContext(CLOCK_SYMBOL).catch(() => null);
+  const win = actionWindow(clock);
+  const sessionDate = todayAtVenue(clock?.timezone || "America/New_York");
+
+  const admin = getSupabaseAdmin();
+  const out: ProbeResult = {
+    marketWindow: {
+      phase: win.phase,
+      actionable: win.actionable,
+      minutesToClose: win.minutesToClose === null ? null : Math.round(win.minutesToClose),
+    },
+    sessionDate,
+    supabase: { configured: Boolean(admin), canRead: false },
+    accounts: { total: 0, withWatchlist: 0, emailAlertsOn: 0 },
+    alertLog: { readable: false, rowsToday: 0 },
+    email: { configured: EMAIL_CONFIGURED },
+    ready: false,
+    blocking: [],
+  };
+
+  if (!admin) {
+    blocking.push("SUPABASE_SERVICE_ROLE_KEY is not set");
+  } else {
+    const { data, error } = await admin.from("user_state").select("user_id, state");
+    if (error) {
+      out.supabase.error = error.message;
+      blocking.push(`cannot read user_state: ${error.message}`);
+    } else {
+      out.supabase.canRead = true;
+      const rows = (data as UserRow[] | null) ?? [];
+      out.accounts.total = rows.length;
+      out.accounts.withWatchlist = rows.filter((r) => (r.state?.watchlist?.length ?? 0) > 0).length;
+      out.accounts.emailAlertsOn = rows.filter((r) => r.state?.notifyPrefs?.email === true).length;
+      if (out.accounts.emailAlertsOn === 0) {
+        blocking.push("nobody has switched email alerts on at /notifications");
+      }
+    }
+
+    const { data: logRows, error: logErr } = await admin
+      .from("alert_log")
+      .select("user_id")
+      .eq("session_date", sessionDate);
+    if (logErr) {
+      out.alertLog.error = logErr.message;
+      blocking.push(`cannot read alert_log — has supabase/alerts.sql been run? (${logErr.message})`);
+    } else {
+      out.alertLog.readable = true;
+      out.alertLog.rowsToday = (logRows ?? []).length;
+    }
+  }
+
+  if (!EMAIL_CONFIGURED) blocking.push("RESEND_API_KEY is not set");
+
+  // --- Optional: prove delivery actually works ---------------------------
+  if (sendTest && admin && EMAIL_CONFIGURED) {
+    const { data } = await admin.from("user_state").select("user_id, state");
+    const target = ((data as UserRow[] | null) ?? []).find(
+      (r) => r.state?.notifyPrefs?.email === true,
+    );
+    if (!target) {
+      out.email.error = "no account has email alerts switched on";
+    } else {
+      const { data: userData } = await admin.auth.admin.getUserById(target.user_id);
+      const address = userData.user?.email;
+      if (!address) {
+        out.email.error = "that account has no email address";
+      } else {
+        const sent = await sendEmail({
+          to: address,
+          subject: "QuantPulse setup test — not a signal",
+          text: [
+            "This is a setup test, not a trading signal. Nothing has triggered.",
+            "",
+            "If you are reading this, the scheduled alert job can reach you:",
+            "Supabase, Resend and the endpoint secret are all wired correctly.",
+            "",
+            "Real alerts only arrive inside the pre-close window and always name",
+            "a ticker, a strategy and the minutes left to place the order.",
+          ].join("\n"),
+          html: "<pre style=\"font:13px ui-monospace,Menlo,monospace;white-space:pre-wrap\">This is a setup test, not a trading signal. Nothing has triggered.\n\nIf you are reading this, the scheduled alert job can reach you:\nSupabase, Resend and the endpoint secret are all wired correctly.\n\nReal alerts only arrive inside the pre-close window and always name\na ticker, a strategy and the minutes left to place the order.</pre>",
+        });
+        if (sent.ok) out.email.sentTestTo = address;
+        else out.email.error = sent.error;
+      }
+    }
+  }
+
+  out.blocking = blocking;
+  out.ready = blocking.length === 0;
+  return out;
+}
+
 export async function runPreClosePass(now = Date.now()): Promise<PreCloseResult> {
   // --- Is it actually the window? ----------------------------------------
   //

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { runPreClosePass } from "@/lib/cron/pre-close";
+import { probePreClose, runPreClosePass } from "@/lib/cron/pre-close";
 
 /**
  * Scheduled pre-close alert pass.
@@ -48,6 +48,21 @@ async function handle(request: Request) {
   }
 
   try {
+    // Setup diagnostics. `probe` exercises every dependency without sending
+    // anything; `test-email` additionally puts one clearly-marked sample
+    // through the real delivery path. Both sit behind the same secret, and
+    // both exist because the real pass returns early outside the window — so
+    // without them a typo in a key is only discovered during the ten minutes
+    // it matters.
+    const url = new URL(request.url);
+    if (url.searchParams.has("probe") || url.searchParams.has("test-email")) {
+      const result = await probePreClose(url.searchParams.has("test-email"));
+      return NextResponse.json(result, {
+        status: 200,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+
     const result = await runPreClosePass();
     return NextResponse.json(result, {
       status: 200,
