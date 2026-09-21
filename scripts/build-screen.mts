@@ -38,6 +38,7 @@ import {
   verdict,
   type FactorId,
 } from "../src/lib/alpha.ts";
+import { DEFAULT_CASH_RATE_PCT, edgeOf } from "../src/lib/edge.ts";
 import { dropInProgressBar } from "../src/lib/bars.ts";
 import type { Bar } from "../src/lib/types.ts";
 
@@ -273,6 +274,26 @@ type Row = {
   dd: number;
   exp: number;
   state: "in" | "out";
+  /**
+   * When the open position was entered, and how many sessions the rule has
+   * been in its current state.
+   *
+   * "Currently in" on its own is not actionable and is routinely misread as
+   * "buy this". A rule that entered forty sessions ago has already captured
+   * most of what the backtest measured; buying it today is a different trade
+   * from the one that was simulated. Carrying the date is what lets the UI
+   * separate a fresh signal from a stale one.
+   */
+  entry: string | null;
+  days: number;
+  /** Return on the open position so far, percent. */
+  open: number | null;
+  /**
+   * 0-100, how close the score sits to the entry trigger. Only meaningful
+   * while out: it is the difference between "nowhere near" and "one bad day
+   * away", which is the whole point of a watchlist.
+   */
+  prox: number | null;
   /** walk-forward, this same parameter on the held-out window */
   oos: number | null;
   oosBh: number | null;
@@ -404,6 +425,10 @@ const worker = async () => {
         dd: round(r.strategy.maxDrawdownPct),
         exp: round(r.strategy.exposurePct, 0),
         state: r.signal.state,
+        entry: r.signal.entryDate,
+        days: r.signal.daysInState,
+        open: r.signal.openReturnPct === null ? null : round(r.signal.openReturnPct),
+        prox: r.signal.proximityPct === null ? null : round(r.signal.proximityPct, 0),
         oos,
         oosBh,
         costOk: pricey.strategy.totalReturnPct > bh,
@@ -422,7 +447,19 @@ const worker = async () => {
 const t0 = Date.now();
 await Promise.all(Array.from({ length: 6 }, worker));
 
-rows.sort((a, b) => b.ret - b.bh - (a.ret - a.bh));
+/**
+ * Rank by edge over holding, DISCOUNTED by how much evidence supports it.
+ *
+ * The previous key was raw `ret - bh`, which put the least trustworthy rows on
+ * top: of its ten loudest results, nine had no statistical edge at all and some
+ * rested on one or two trades. Sorting by a shrunk edge means a 35%/yr claim
+ * from fifteen trades ranks below a 20%/yr claim from sixty, which is the
+ * correct ordering of belief.
+ */
+rows.sort(
+  (a, b) =>
+    edgeOf(b, 3).score - edgeOf(a, 3).score,
+);
 
 const counts = rows.reduce<Record<string, number>>((acc, r) => {
   acc[r.lvl] = (acc[r.lvl] ?? 0) + 1;
@@ -445,9 +482,28 @@ const asOf =
     .pop() ??
   "";
 
+/**
+ * The short rate a strategy has to clear to be worth running.
+ *
+ * ^IRX is the 13-week Treasury discount rate, quoted in percent. It matters
+ * because these rules sit in cash roughly three-quarters of the time: judged
+ * against zero, a rule earning 3% a year looks like a win, when in fact it
+ * took real drawdown risk to underperform a savings account. Falls back to a
+ * fixed default rather than failing the build -- a missing quote should not
+ * cost a whole scan.
+ */
+const cashRatePct = await yf
+  .quote("^IRX")
+  .then((q) => {
+    const v = q?.regularMarketPrice;
+    return typeof v === "number" && v > 0 && v < 25 ? round(v, 2) : DEFAULT_CASH_RATE_PCT;
+  })
+  .catch(() => DEFAULT_CASH_RATE_PCT);
+
 const payload = {
   generatedAt: new Date().toISOString(),
   asOf,
+  cashRatePct,
   years: 3,
   horizon: 5,
   costBps: DEFAULT_COST_BPS,

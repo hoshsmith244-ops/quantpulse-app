@@ -13,6 +13,7 @@ import { useSyncPush } from "@/lib/use-sync-push";
 import { cn } from "@/lib/utils";
 
 const NAV = [
+  { href: "/today", label: "Today" },
   { href: "/dashboard", label: "Terminal" },
   { href: "/screener", label: "Screener" },
   { href: "/watchlist", label: "Watchlist" },

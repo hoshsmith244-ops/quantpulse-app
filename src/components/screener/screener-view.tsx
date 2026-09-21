@@ -22,6 +22,7 @@ import { WatchButton } from "@/components/terminal/watch-button";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { Button } from "@/components/ui/button";
 import { FACTORS, getFactor } from "@/lib/alpha";
+import { edgeOf } from "@/lib/edge";
 import { fmtInt, fmtPct } from "@/lib/format";
 import {
   CAP_LABELS,
@@ -114,7 +115,10 @@ export function ScreenerView() {
     [data, effective],
   );
 
-  const sorted = React.useMemo(() => sortRows(rows, sort), [rows, sort]);
+  const sorted = React.useMemo(
+    () => sortRows(rows, sort, data?.years ?? 3),
+    [rows, sort, data?.years],
+  );
   const sectors = React.useMemo(() => (data ? sectorsOf(data) : []), [data]);
   const industries = React.useMemo(
     () => (data ? industriesOf(data, filters.sector) : []),
@@ -482,7 +486,7 @@ export function ScreenerView() {
                 value={sort}
                 onChange={(v) => setSort(v as SortKey)}
                 options={[
-                  { value: "edge", label: "Edge over holding" },
+                  { value: "edge", label: "Edge over holding · weighted" },
                   { value: "return", label: "Strategy return" },
                   { value: "evidence", label: "Strength of evidence" },
                   { value: "trades", label: "Number of trades" },
@@ -729,9 +733,18 @@ function ResultsTable({
     router.push("/dashboard");
   };
 
+  /**
+   * Per YEAR, not per window.
+   *
+   * These were three-year totals, which made the same result appear as two
+   * different numbers depending on which page you were on — RUN reads "+81.2%"
+   * here and "+27.2%/yr" on the daily list. Totals also flatter: a number three
+   * times larger than the return anyone would actually earn in a year is the
+   * wrong anchor to leave in someone's head. One unit everywhere.
+   */
   const headers = advanced
-    ? ["Ticker", "Strategy", "Now", "Return", "Holding", "Edge", "Trades", "Win", "Out of sample", "t", "Cap", "P/E", "Liquidity", "Vol", "Checks", ""]
-    : ["Ticker", "Strategy", "Now", "Return", "Holding", "Edge", "Trades", "Win", ""];
+    ? ["Ticker", "Strategy", "Now", "Return / yr", "Holding / yr", "Edge / yr", "Trades", "Win", "Out of sample", "t", "Cap", "P/E", "Liquidity", "Vol", "Checks", ""]
+    : ["Ticker", "Strategy", "Now", "Return / yr", "Holding / yr", "Edge / yr", "Trades", "Win", ""];
 
   return (
     <div className="overflow-x-auto">
@@ -754,7 +767,7 @@ function ResultsTable({
         <tbody>
           {rows.map((r) => {
             const t = data.tickers[r.s];
-            const edge = r.ret - r.bh;
+            const e = edgeOf(r, data.years, data.cashRatePct);
             const meta = getFactor(r.f);
 
             return (
@@ -799,23 +812,23 @@ function ResultsTable({
                 <td
                   className={cn(
                     "tnum whitespace-nowrap px-3 py-2 text-right",
-                    r.ret >= 0 ? "text-up" : "text-down",
+                    e.annStrategy >= 0 ? "text-up" : "text-down",
                   )}
                 >
-                  {fmtPct(r.ret, 1)}
+                  {fmtPct(e.annStrategy, 1)}
                 </td>
 
                 <td className="tnum whitespace-nowrap px-3 py-2 text-right text-dim">
-                  {fmtPct(r.bh, 1)}
+                  {fmtPct(e.annHold, 1)}
                 </td>
 
                 <td
                   className={cn(
                     "tnum whitespace-nowrap px-3 py-2 text-right font-medium",
-                    edge >= 0 ? "text-up" : "text-down",
+                    e.vsHold >= 0 ? "text-up" : "text-down",
                   )}
                 >
-                  {fmtPct(edge, 1)}
+                  {fmtPct(e.vsHold, 1)}
                 </td>
 
                 <td className="tnum px-3 py-2 text-right text-muted">{r.n}</td>

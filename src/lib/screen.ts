@@ -1,4 +1,5 @@
 import type { FactorId } from "./alpha";
+import { edgeOf } from "./edge";
 
 /**
  * The screener dataset and the filters over it.
@@ -65,6 +66,18 @@ export type ScreenRow = {
   dd: number;
   exp: number;
   state: "in" | "out";
+  /**
+   * Date the open position was entered, and sessions spent in the current
+   * state. "Currently in" is not a buy signal on its own — a rule forty
+   * sessions into a position has already banked most of what the backtest
+   * measured.
+   */
+  entry: string | null;
+  days: number;
+  /** Return on the open position so far, percent. */
+  open: number | null;
+  /** 0–100 distance to the entry trigger. Only meaningful while out. */
+  prox: number | null;
   oos: number | null;
   oosBh: number | null;
   costOk: boolean;
@@ -74,6 +87,12 @@ export type ScreenRow = {
 export type ScreenData = {
   generatedAt: string;
   asOf: string;
+  /**
+   * Short rate (13-week T-bill) at build time, percent per year. The hurdle a
+   * strategy must clear to be worth running at all, given these rules sit in
+   * cash most of the time. Optional: datasets built before this existed.
+   */
+  cashRatePct?: number;
   years: number;
   horizon: number;
   costBps: number;
@@ -426,7 +445,7 @@ export function applyFilters(data: ScreenData, f: Filters): FilterResult {
 
 export type SortKey = "edge" | "return" | "evidence" | "trades" | "symbol";
 
-export function sortRows(rows: ScreenRow[], key: SortKey): ScreenRow[] {
+export function sortRows(rows: ScreenRow[], key: SortKey, years = 3): ScreenRow[] {
   const rank = { promising: 3, mixed: 2, inverted: 1, weak: 0 };
   return [...rows].sort((a, b) => {
     switch (key) {
@@ -439,7 +458,21 @@ export function sortRows(rows: ScreenRow[], key: SortKey): ScreenRow[] {
       case "symbol":
         return a.s.localeCompare(b.s) || a.f.localeCompare(b.f);
       default:
-        return b.ret - b.bh - (a.ret - a.bh);
+        /**
+         * Edge over holding, discounted by the evidence behind it.
+         *
+         * The obvious key — raw `ret - bh` — is actively misleading, and was
+         * the default here for months. It put the least trustworthy rows on
+         * top, because the largest gaps come from the most volatile names on
+         * the thinnest samples: nine of its top ten had no statistical edge at
+         * all, and two rested on fewer than three completed trades. Shrinking
+         * by sample size and significance fixes the ordering without hiding
+         * anything — the same rows are still in the list, just no longer
+         * presented as the best thing on it.
+         *
+         * `score` needs no cash rate; only the verdict does.
+         */
+        return edgeOf(b, years).score - edgeOf(a, years).score;
     }
   });
 }
