@@ -136,6 +136,28 @@ check(
   false,
 );
 
+// --- Walk-forward ----------------------------------------------------------
+// COP/trendDistance passes every in-sample test and then loses to holding by
+// 23 points on the held-out window. That is the most informative failure the
+// scan can produce and it must outrank the in-sample profit.
+console.log("\nWalk-forward");
+const cop = edgeOf(row({ ret: 14, bh: 10, n: 19, t: 4, oos: 14.9, oosBh: 38.2 }), YEARS);
+check("failing forward is its own class", cop.cls, "failed-forward");
+check("and leads the warnings", cop.warnings[0], "Lost to holding by 23 points on data the tuning never saw.");
+check("reports the gap", Math.round(cop.oosEdge ?? 0), -23);
+check("heldUp is false", cop.heldUp, false);
+
+const walked = edgeOf(row({ ret: 147, bh: 39.4, n: 27, t: 4.13, oos: 55.9, oosBh: 15.5 }), YEARS);
+check("holding up keeps candidate status", walked.cls, "candidate");
+check("heldUp is true", walked.heldUp, true);
+check("reports the margin", Math.round(walked.oosEdge ?? 0), 40);
+
+// Most of the dataset is never walked forward. Absent must not read as failed.
+const untested = edgeOf(row({ ret: 147, bh: 39.4, n: 27, t: 4.13 }), YEARS);
+check("no walk-forward is not a failure", untested.cls, "candidate");
+check("heldUp is null when untested", untested.heldUp, null);
+check("oosEdge is null when untested", untested.oosEdge, null);
+
 // --- Ranking behaviour -----------------------------------------------------
 console.log("\nRanking");
 const loud = edgeOf(row({ ret: 200, bh: 10, n: 12, t: 2.1 }), YEARS);
@@ -183,6 +205,11 @@ check(
 check(
   "every candidate survived both stress tests",
   candidates.every((x) => x.r.costOk && x.r.nbrOk),
+  true,
+);
+check(
+  "no candidate failed its walk-forward",
+  candidates.every((x) => x.e.heldUp !== false),
   true,
 );
 check("the list is not empty", candidates.length > 0, true);

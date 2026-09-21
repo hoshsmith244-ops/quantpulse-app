@@ -1,3 +1,4 @@
+import { getFactor } from "./alpha";
 import { DEFAULT_CASH_RATE_PCT, edgeOf, type Edge } from "./edge";
 import type { ScreenData, ScreenRow, ScreenTicker } from "./screen";
 
@@ -64,8 +65,12 @@ export type Funnel = {
   significant: number;
   /** ...and survived cost and parameter-shift stress, on enough trades. */
   survived: number;
+  /** ...and held up on a window the tuning never saw. */
+  heldUp: number;
   /** ...and actually make money, above cash, above holding. */
   candidates: number;
+  /** ...and clear the minimum edge you asked for. */
+  aboveFloor: number;
   /** ...and are in a position right now. */
   live: number;
   /** ...and entered recently enough to still resemble the tested trade. */
@@ -78,7 +83,25 @@ export type Today = {
   years: number;
   picks: Pick[];
   funnel: Funnel;
+  /** How many candidates the current floor is holding back. */
+  hiddenByFloor: number;
 };
+
+/**
+ * Default minimum edge over holding, percentage points a year.
+ *
+ * Not arbitrary. In the current dataset, raising this floor raises the share
+ * of names that go on to beat holding out of sample — 91% of all candidates,
+ * 93% above 10, 100% above 15. The mechanism is plausible: a large edge is
+ * harder to manufacture by luck than a small one. The evidence is only two
+ * failures deep, so this is set where it removes the obviously-marginal names
+ * without pretending to a precision the sample cannot support.
+ *
+ * Exposed as a control rather than baked in, and the page always says how many
+ * names the floor is hiding. A filter that silently shrinks a list teaches you
+ * the wrong thing about how much passed.
+ */
+export const DEFAULT_MIN_EDGE = 10;
 
 function bucketOf(row: ScreenRow): PickBucket {
   if (row.state === "in") {
@@ -94,16 +117,20 @@ const BUCKET_ORDER: Record<PickBucket, number> = {
   waiting: 3,
 };
 
-export function buildToday(data: ScreenData): Today {
+export function buildToday(data: ScreenData, minEdge = DEFAULT_MIN_EDGE): Today {
   const cashRatePct = data.cashRatePct ?? DEFAULT_CASH_RATE_PCT;
   const years = data.years;
 
   const scored = data.rows.map((row) => ({ row, edge: edgeOf(row, years, cashRatePct) }));
 
   const significant = data.rows.filter((r) => r.lvl === "promising").length;
-  const survived = scored.filter((x) => x.edge.cls !== "noise" && x.edge.cls !== "fragile").length;
+  const survived = scored.filter(
+    (x) => x.edge.cls !== "noise" && x.edge.cls !== "fragile",
+  ).length;
+  const heldUp = scored.filter((x) => x.edge.heldUp === true).length;
 
-  const candidates = scored.filter((x) => x.edge.cls === "candidate");
+  const allCandidates = scored.filter((x) => x.edge.cls === "candidate");
+  const candidates = allCandidates.filter((x) => x.edge.vsHold >= minEdge);
 
   const picks: Pick[] = candidates
     .map(({ row, edge }) => ({
@@ -131,11 +158,49 @@ export function buildToday(data: ScreenData): Today {
       pairs: data.pairs,
       significant,
       survived,
-      candidates: candidates.length,
+      heldUp,
+      candidates: allCandidates.length,
+      aboveFloor: candidates.length,
       live: picks.filter((p) => p.row.state === "in").length,
       fresh: picks.filter((p) => p.bucket === "fresh").length,
     },
+    hiddenByFloor: allCandidates.length - candidates.length,
   };
+}
+
+/**
+ * Where the concentration is.
+ *
+ * Eight names that are really three bets is the failure this catches. The
+ * current list puts RIVN, ADNT and LEA together -- all consumer cyclical, all
+ * auto -- and five of eight on the same strategy. Nothing else in the app
+ * would tell you, because every row is evaluated on its own.
+ */
+export function concentrationOf(picks: Pick[]): {
+  label: string;
+  members: string[];
+}[] {
+  const groups = new Map<string, string[]>();
+  for (const p of picks) {
+    const sector = p.ticker?.sector;
+    if (sector) {
+      const key = `sector:${sector}`;
+      groups.set(key, [...(groups.get(key) ?? []), p.row.s]);
+    }
+    const fkey = `strategy:${getFactor(p.row.f).name}`;
+    groups.set(fkey, [...(groups.get(fkey) ?? []), p.row.s]);
+  }
+
+  // Only worth saying when a group is both several names and a real share of
+  // the list; two of twenty is not concentration.
+  const out: { label: string; members: string[] }[] = [];
+  for (const [key, members] of groups) {
+    const unique = [...new Set(members)];
+    if (unique.length < 3 || unique.length / picks.length < 0.35) continue;
+    const [kind, name] = key.split(":");
+    out.push({ label: kind === "sector" ? `the ${name} sector` : `the "${name}" strategy`, members: unique });
+  }
+  return out.sort((a, b) => b.members.length - a.members.length);
 }
 
 export const BUCKET_LABELS: Record<PickBucket, string> = {

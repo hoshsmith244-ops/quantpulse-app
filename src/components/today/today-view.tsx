@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronDown, Plus } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Layers, Plus, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
@@ -13,7 +13,9 @@ import { stalenessOf } from "@/lib/screen";
 import {
   BUCKET_BLURBS,
   BUCKET_LABELS,
+  DEFAULT_MIN_EDGE,
   buildToday,
+  concentrationOf,
   type Pick,
   type PickBucket,
 } from "@/lib/today";
@@ -29,6 +31,7 @@ export function TodayView() {
   const { entries, add } = useWatchlist();
   const [, setParams] = usePersistedParams();
   const router = useRouter();
+  const [minEdge, setMinEdge] = React.useState(DEFAULT_MIN_EDGE);
 
   /** The terminal reads from stored params, so set them before navigating. */
   const open = React.useCallback(
@@ -39,7 +42,10 @@ export function TodayView() {
     [router, setParams],
   );
 
-  const today = React.useMemo(() => (data ? buildToday(data) : null), [data]);
+  const today = React.useMemo(
+    () => (data ? buildToday(data, minEdge) : null),
+    [data, minEdge],
+  );
 
   // Derived from `entries` rather than the store's `has()` so the button
   // re-renders the moment something is added.
@@ -76,7 +82,7 @@ export function TodayView() {
 
   return (
     <div className="mx-auto w-full max-w-[1000px] space-y-4 p-4 lg:p-6">
-      <Funnel today={today} stale={stale} />
+      <Funnel today={today} stale={stale} minEdge={minEdge} setMinEdge={setMinEdge} />
 
       {today.picks.length === 0 ? (
         <Panel>
@@ -99,6 +105,7 @@ export function TodayView() {
                still here, because a rule at 84% of the way to its trigger is
                worth seeing before it fires rather than after. */
             defaultOpen={g.bucket !== "waiting"}
+            concentration={g.bucket === "fresh" ? concentrationOf(g.picks) : []}
           >
             {g.picks.map((p) => (
               <PickRow
@@ -141,9 +148,13 @@ export function TodayView() {
 function Funnel({
   today,
   stale,
+  minEdge,
+  setMinEdge,
 }: {
   today: ReturnType<typeof buildToday>;
   stale: ReturnType<typeof stalenessOf>;
+  minEdge: number;
+  setMinEdge: (v: number) => void;
 }) {
   const f = today.funnel;
   // A list built on stale bars is the failure mode that matters here: it would
@@ -157,8 +168,9 @@ function Funnel({
     { n: f.pairs, label: "strategy + ticker pairs tested" },
     { n: f.significant, label: "showed a statistically real pattern" },
     { n: f.survived, label: "survived cost and parameter stress" },
+    { n: f.heldUp, label: "beat holding on data the tuning never saw", key: true },
     { n: f.candidates, label: `made money above cash (${fmtPctPlain(today.cashRatePct, 1)}) and above holding` },
-    { n: f.live, label: "are in a position right now" },
+    { n: f.aboveFloor, label: `clear your ${minEdge}%/yr minimum` },
     { n: f.fresh, label: "entered within the last week" },
   ];
   const max = steps[0].n || 1;
@@ -198,6 +210,38 @@ function Funnel({
             </li>
           ))}
         </ul>
+
+        {/*
+          The floor is a control, not a hidden rule. Saying what it is holding
+          back matters: a filter that silently shrinks the list teaches you the
+          wrong thing about how much actually passed.
+        */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-dim">
+            Minimum edge
+          </span>
+          <span className="flex items-center gap-1">
+            {[0, 5, 10, 15, 20].map((v) => (
+              <button
+                key={v}
+                onClick={() => setMinEdge(v)}
+                className={cn(
+                  "tnum border px-2 py-0.5 text-[11px] transition-colors",
+                  v === minEdge
+                    ? "border-amber bg-amber/10 text-amber"
+                    : "border-edge text-muted hover:border-amber/50 hover:text-bright",
+                )}
+              >
+                {v === 0 ? "any" : `${v}%`}
+              </button>
+            ))}
+          </span>
+          <span className="prose-face min-w-0 text-[11px] leading-relaxed text-dim">
+            {today.hiddenByFloor > 0
+              ? `${today.hiddenByFloor} candidate${today.hiddenByFloor === 1 ? "" : "s"} hidden below this floor.`
+              : "Showing every candidate."}
+          </span>
+        </div>
       </div>
     </Panel>
   );
@@ -207,11 +251,13 @@ function Section({
   bucket,
   count,
   defaultOpen,
+  concentration,
   children,
 }: {
   bucket: PickBucket;
   count: number;
   defaultOpen: boolean;
+  concentration: { label: string; members: string[] }[];
   children: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
@@ -241,6 +287,32 @@ function Section({
           <p className="prose-face border-b border-line-soft px-4 py-2.5 text-[12px] leading-relaxed text-muted sm:hidden">
             {BUCKET_BLURBS[bucket]}
           </p>
+
+          {/*
+            Every row on this page is judged alone, which quietly implies the
+            names are independent bets. They are not: three of the current
+            eight are the same sector and the same trade in different clothes.
+            Taking all of them is far more concentrated than the count suggests.
+          */}
+          {concentration.length > 0 ? (
+            <div className="border-b border-line-soft bg-amber/[0.04] px-4 py-2.5">
+              <p className="prose-face flex items-start gap-2 text-[11px] leading-relaxed text-amber">
+                <Layers className="mt-0.5 size-3 shrink-0" />
+                <span>
+                  These are fewer bets than they look.{" "}
+                  {concentration.map((c, i) => (
+                    <React.Fragment key={c.label}>
+                      {i > 0 ? "; " : ""}
+                      <span className="tnum text-bright">{c.members.join(", ")}</span> all use{" "}
+                      {c.label}
+                    </React.Fragment>
+                  ))}
+                  . Taking all of them concentrates the risk rather than spreading it.
+                </span>
+              </p>
+            </div>
+          ) : null}
+
           <ul className="divide-y divide-line-soft">{children}</ul>
         </>
       ) : null}
@@ -301,6 +373,23 @@ function PickRow({
               {evidenceLabel(edge.confidence)}
             </span>
           </p>
+
+          {/*
+            The walk-forward result, which the scan has always computed and no
+            page has ever shown. It is the only number here measured on data
+            the rule was not fitted to, which makes it worth more than every
+            in-sample figure on the row combined.
+          */}
+          {edge.oosEdge !== null ? (
+            <p className="prose-face mt-1.5 flex items-start gap-1.5 text-[11px] leading-relaxed text-up">
+              <ShieldCheck className="mt-0.5 size-3 shrink-0" />
+              <span>
+                Held up on unseen data — beat holding by{" "}
+                <span className="tnum">{edge.oosEdge.toFixed(0)}</span> points on a
+                window the tuning never saw.
+              </span>
+            </p>
+          ) : null}
         </div>
 
         <div className="shrink-0 text-right">

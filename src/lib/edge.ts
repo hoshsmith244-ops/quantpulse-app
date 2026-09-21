@@ -62,11 +62,28 @@ export type EdgeRow = {
   costOk: boolean;
   /** Beat holding at neighbouring parameter values, not just the best one. */
   nbrOk: boolean;
+  /**
+   * Walk-forward result: this rule's return on a window the tuning never saw,
+   * and buy-and-hold over that same window. Null when the scan did not run the
+   * walk-forward for this row.
+   *
+   * This is the strongest evidence in the dataset and the only number here
+   * that is not, in some sense, a description of the data it was fitted to.
+   */
+  oos?: number | null;
+  oosBh?: number | null;
 };
 
 export type EdgeClass =
-  /** Real, clears cash, beats holding. The only class worth acting on. */
+  /** Real, clears cash, beats holding, and held up on unseen data. */
   | "candidate"
+  /**
+   * Passed every in-sample test and then failed on the held-out window.
+   * Kept as its own class rather than folded into "fragile": this is the
+   * single most informative failure in the dataset, because it is the only
+   * one measured on data the rule was not fitted to.
+   */
+  | "failed-forward"
   /** Real and beats holding, but does not make money. A cushion, not a trade. */
   | "cushion"
   /** Real and makes money, but holding the stock did better. */
@@ -89,6 +106,15 @@ export type Edge = {
   confidence: number;
   /** vsHold discounted by confidence. The ranking key. */
   score: number;
+  /**
+   * Percentage points this rule beat holding by on the held-out window, or
+   * null when the scan did not walk it forward. NOT annualised: the test
+   * window is a slice, not a fixed term, so a per-year figure would imply a
+   * precision the number does not have.
+   */
+  oosEdge: number | null;
+  /** Beat holding on data the tuning never saw. Null when untested. */
+  heldUp: boolean | null;
   cls: EdgeClass;
   /** One sentence. What this row actually is. */
   headline: string;
@@ -134,6 +160,14 @@ export function edgeOf(
   const rightWay = row.t > 0;
   const enoughTrades = row.n >= MIN_TRADES;
   const survivedStress = row.costOk && row.nbrOk;
+
+  const oosEdge =
+    row.oos === null || row.oos === undefined || row.oosBh === null || row.oosBh === undefined
+      ? null
+      : row.oos - row.oosBh;
+  // Absent is not the same as failed. The scan only walks forward the rows
+  // that were worth the cost, so most of the dataset has no reading at all.
+  const heldUp = oosEdge === null ? null : oosEdge > 0;
 
   const warnings: string[] = [];
 
@@ -182,6 +216,15 @@ export function edgeOf(
   } else if (!enoughTrades || !survivedStress) {
     cls = "fragile";
     headline = "Real on paper, but it does not survive scrutiny";
+  } else if (heldUp === false) {
+    // Checked before the money tests on purpose. A rule that failed on unseen
+    // data has told us the in-sample profit was a description of the past, so
+    // there is nothing to be gained by grading that profit further.
+    cls = "failed-forward";
+    headline = "Worked on the test data, failed on fresh data";
+    warnings.unshift(
+      `Lost to holding by ${Math.abs(oosEdge ?? 0).toFixed(0)} points on data the tuning never saw.`,
+    );
   } else if (vsHold <= 0) {
     cls = "holding-wins";
     headline = "Works, but holding the stock beat it";
@@ -206,6 +249,8 @@ export function edgeOf(
     // stock that tripled should not rank above a rule that added more of its
     // own. Classification is what keeps money-losing cushions out of the list.
     score: vsHold * confidence,
+    oosEdge,
+    heldUp,
     cls,
     headline,
     warnings,
@@ -233,6 +278,7 @@ export function evidenceLabel(confidence: number): string {
 
 export const EDGE_LABELS: Record<EdgeClass, string> = {
   candidate: "Candidate",
+  "failed-forward": "Failed on fresh data",
   cushion: "Cushion only",
   "holding-wins": "Holding wins",
   fragile: "Too fragile",
@@ -241,6 +287,7 @@ export const EDGE_LABELS: Record<EdgeClass, string> = {
 
 export const EDGE_TONES: Record<EdgeClass, "up" | "amber" | "down" | "dim"> = {
   candidate: "up",
+  "failed-forward": "down",
   cushion: "amber",
   "holding-wins": "amber",
   fragile: "dim",
