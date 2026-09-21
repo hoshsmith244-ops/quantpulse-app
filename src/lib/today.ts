@@ -145,13 +145,17 @@ export const BUCKET_LABELS: Record<PickBucket, string> = {
   waiting: "Not close",
 };
 
+/**
+ * One sentence each. The long versions said the same thing three ways; what
+ * cannot be shortened is the distinction between the groups, because that is
+ * the part that stops "currently holding" being read as "buy this".
+ */
 export const BUCKET_BLURBS: Record<PickBucket, string> = {
   fresh:
-    "The rule entered within the last five sessions, so buying now is close to the trade that was actually tested. This is the only group where the backtest's numbers describe the trade in front of you.",
+    "The only group where the backtest describes the trade you would actually be making.",
   nearing:
-    "Not in a position, but the score is close to the entry trigger. These are the names worth having on a watchlist, because the alert can only reach you for something you are watching.",
+    "Not in yet, but close. Watch these — an alert can only reach you for something on your watchlist.",
   holding:
-    "The rule is in a position it opened a while ago. The statistics below describe that trade, not one started today — much of the move they measure has already happened.",
-  waiting:
-    "Passed every test, but not in a position and not close enough to act on. Listed so the set is complete — and because a rule sitting at 80% of the way to its trigger is worth watching before it gets there, not after.",
+    "Opened a while ago, so much of the move these numbers measure has already happened.",
+  waiting: "Passed every test, but nowhere near triggering. Nothing to do yet.",
 };

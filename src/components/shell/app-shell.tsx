@@ -12,13 +12,19 @@ import { useSignalWatch } from "@/lib/use-signal-watch";
 import { useSyncPush } from "@/lib/use-sync-push";
 import { cn } from "@/lib/utils";
 
+/**
+ * The four places you actually work.
+ *
+ * Guide and Membership were here too, and both already had a second entrance —
+ * Guide sits in the status bar, Membership is the button on the right. Listing
+ * them twice cost a third of the navigation to say nothing new, and pushed the
+ * things you open daily further apart.
+ */
 const NAV = [
   { href: "/today", label: "Today" },
   { href: "/dashboard", label: "Terminal" },
   { href: "/screener", label: "Screener" },
   { href: "/watchlist", label: "Watchlist" },
-  { href: "/guide", label: "Guide" },
-  { href: "/membership", label: "Membership" },
 ];
 
 /** Thin top chrome. The tool gets the screen; navigation stays out of the way. */
@@ -43,6 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 export function TopBar() {
   const pathname = usePathname();
+  const { session, email } = useAccount();
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-3 sm:gap-5 sm:px-4">
@@ -76,8 +83,7 @@ export function TopBar() {
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <NotificationBell />
-        {/* Icon rather than a nav item: the top row is already five links, and
-            appearance is something you set once. */}
+        {/* Icon rather than a nav item: appearance is something you set once. */}
         <Link
           href="/settings"
           aria-label="Settings"
@@ -97,11 +103,23 @@ export function TopBar() {
             Yahoo Finance
           </span>
         </span>
+        {/*
+          Said "Sign in" whether or not you were, which is both wrong and the
+          only place the shell could have told you which account it is syncing
+          to. The email is truncated rather than dropped: on a tool that emails
+          you trade instructions, "which address" is worth a glance.
+        */}
         <Link
           href="/membership"
-          className="border border-edge px-2.5 py-1 text-[11px] uppercase tracking-[0.1em] text-muted transition-colors hover:border-amber hover:text-amber"
+          title={session ? `Signed in as ${email}` : "Sign in to sync across devices"}
+          className={cn(
+            "max-w-[11rem] truncate border px-2.5 py-1 text-[11px] uppercase tracking-[0.1em] transition-colors",
+            session
+              ? "border-up/40 text-up hover:border-up"
+              : "border-edge text-muted hover:border-amber hover:text-amber",
+          )}
         >
-          Sign in
+          {session ? (email ?? "Account") : "Sign in"}
         </Link>
       </div>
     </header>

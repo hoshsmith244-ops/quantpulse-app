@@ -217,6 +217,20 @@ export function isCandidate(e: Edge): boolean {
   return e.cls === "candidate";
 }
 
+/**
+ * Confidence as a phrase.
+ *
+ * "t = 6.24, n = 24" is precise and means nothing to most people reading it;
+ * worse, a large t-stat beside a small trade count invites exactly the wrong
+ * conclusion. One phrase carries the combined judgement, and the numbers stay
+ * available for anyone who wants to check the arithmetic.
+ */
+export function evidenceLabel(confidence: number): string {
+  if (confidence >= 0.8) return "strong evidence";
+  if (confidence >= 0.5) return "moderate evidence";
+  return "limited evidence";
+}
+
 export const EDGE_LABELS: Record<EdgeClass, string> = {
   candidate: "Candidate",
   cushion: "Cushion only",

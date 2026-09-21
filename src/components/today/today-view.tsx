@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, Check, Plus } from "lucide-react";
-import Link from "next/link";
+import { AlertTriangle, Check, ChevronDown, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { getFactor } from "@/lib/alpha";
+import { evidenceLabel } from "@/lib/edge";
 import { fmtDate, fmtPct, fmtPctPlain } from "@/lib/format";
 import { stalenessOf } from "@/lib/screen";
 import {
@@ -16,6 +17,7 @@ import {
   type Pick,
   type PickBucket,
 } from "@/lib/today";
+import { usePersistedParams } from "@/lib/use-persisted-params";
 import { useScreen } from "@/lib/use-screen";
 import { cn } from "@/lib/utils";
 import { useWatchlist } from "@/lib/watchlist";
@@ -25,6 +27,17 @@ const ORDER: PickBucket[] = ["fresh", "nearing", "holding", "waiting"];
 export function TodayView() {
   const { data, error } = useScreen();
   const { entries, add } = useWatchlist();
+  const [, setParams] = usePersistedParams();
+  const router = useRouter();
+
+  /** The terminal reads from stored params, so set them before navigating. */
+  const open = React.useCallback(
+    (p: Pick) => {
+      setParams((prev) => ({ ...prev, symbol: p.row.s, factor: p.row.f, param: p.row.p }));
+      router.push("/dashboard");
+    },
+    [router, setParams],
+  );
 
   const today = React.useMemo(() => (data ? buildToday(data) : null), [data]);
 
@@ -78,52 +91,38 @@ export function TodayView() {
         </Panel>
       ) : (
         grouped.map((g) => (
-          <Panel key={g.bucket}>
-            <PanelHead
-              title={BUCKET_LABELS[g.bucket]}
-              right={
-                <Tag tone={g.bucket === "fresh" ? "up" : g.bucket === "nearing" ? "amber" : "neutral"}>
-                  {g.picks.length}
-                </Tag>
-              }
-            />
-            <p className="prose-face border-b border-line-soft px-4 py-3 text-[12px] leading-relaxed text-muted">
-              {BUCKET_BLURBS[g.bucket]}
-            </p>
-            <ul className="divide-y divide-line-soft">
-              {g.picks.map((p) => (
-                <PickRow
-                  key={p.key}
-                  pick={p}
-                  cash={today.cashRatePct}
-                  years={today.years}
-                  added={onList.has(p.key)}
-                  onAdd={() => add(p.row.s, p.row.f, p.row.p)}
-                />
-              ))}
-            </ul>
-          </Panel>
+          <Section
+            key={g.bucket}
+            bucket={g.bucket}
+            count={g.picks.length}
+            /* Nothing in "not close" can be acted on, so it starts shut. It is
+               still here, because a rule at 84% of the way to its trigger is
+               worth seeing before it fires rather than after. */
+            defaultOpen={g.bucket !== "waiting"}
+          >
+            {g.picks.map((p) => (
+              <PickRow
+                key={p.key}
+                pick={p}
+                cash={today.cashRatePct}
+                years={today.years}
+                added={onList.has(p.key)}
+                onAdd={() => add(p.row.s, p.row.f, p.row.p)}
+                onOpen={() => open(p)}
+              />
+            ))}
+          </Section>
         ))
       )}
 
       <Panel>
-        <PanelHead title="What this list is not" />
-        <div className="space-y-2 p-4">
+        <div className="p-4">
           <p className="prose-face max-w-2xl text-[12px] leading-relaxed text-muted">
-            These are the rules that survived every test the scan can apply to
-            past data. That is the strongest statement available here, and it is
-            still a statement about the past. None of it is a forecast, and a
-            rule that worked for three years can stop working the day you start
-            using it.
-          </p>
-          <p className="prose-face max-w-2xl text-[12px] leading-relaxed text-muted">
-            The scan tests {today.years} years at one fixed setting per strategy,
-            with no searching for the setting that happened to work — that search
-            is how backtests get fabricated. Costs are charged at{" "}
-            <span className="text-text">10 bps</span> a round trip and every
-            survivor was re-tested at{" "}
-            <span className="text-text">25 bps</span> and at neighbouring
-            settings. Research tool, not investment advice.
+            <span className="text-text">Every number here is about the past.</span>{" "}
+            A rule that worked for {today.years} years can stop working the day
+            you start using it. One fixed setting per strategy, no searching for
+            the one that happened to work, costs charged at 10 bps and every
+            survivor re-tested at 25 bps. Research tool, not investment advice.
           </p>
         </div>
       </Panel>
@@ -204,112 +203,195 @@ function Funnel({
   );
 }
 
+function Section({
+  bucket,
+  count,
+  defaultOpen,
+  children,
+}: {
+  bucket: PickBucket;
+  count: number;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+
+  return (
+    <Panel>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 border-b border-line px-4 py-2.5 text-left hover:bg-raised/40"
+      >
+        <ChevronDown
+          className={cn("size-3 shrink-0 text-dim transition-transform", !open && "-rotate-90")}
+        />
+        <span className="text-[11px] uppercase tracking-[0.12em] text-bright">
+          {BUCKET_LABELS[bucket]}
+        </span>
+        <Tag tone={bucket === "fresh" ? "up" : bucket === "nearing" ? "amber" : "neutral"}>
+          {count}
+        </Tag>
+        <span className="prose-face ml-2 hidden min-w-0 truncate text-[11px] text-dim sm:block">
+          {BUCKET_BLURBS[bucket]}
+        </span>
+      </button>
+
+      {open ? (
+        <>
+          <p className="prose-face border-b border-line-soft px-4 py-2.5 text-[12px] leading-relaxed text-muted sm:hidden">
+            {BUCKET_BLURBS[bucket]}
+          </p>
+          <ul className="divide-y divide-line-soft">{children}</ul>
+        </>
+      ) : null}
+    </Panel>
+  );
+}
+
 function PickRow({
   pick,
   cash,
   years,
   added,
   onAdd,
+  onOpen,
 }: {
   pick: Pick;
   cash: number;
   years: number;
   added: boolean;
   onAdd: () => void;
+  onOpen: () => void;
 }) {
   const { row, edge, ticker, bucket } = pick;
   const meta = getFactor(row.f);
+  const [open, setOpen] = React.useState(false);
 
   return (
     <li className="p-4">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
+      {/*
+        Three facts decide this row: how much it beat holding by, whether that
+        is believable, and whether the signal is current. Everything else was
+        competing with them for attention, so it moved behind the toggle.
+      */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <Link
-              href={`/dashboard?symbol=${row.s}&factor=${row.f}&param=${row.p}`}
+            {/*
+              A button, not a link. The terminal reads what to show from
+              localStorage and ignores the query string, so `?symbol=CI` looked
+              like it worked and silently dropped you on whatever you had open
+              before. Setting the params first and then navigating is what the
+              screener already does.
+            */}
+            <button
+              onClick={onOpen}
+              title={`Open ${row.s} in the terminal`}
               className="tnum text-[15px] text-bright hover:text-amber hover:underline"
             >
               {row.s}
-            </Link>
+            </button>
             <span className="truncate text-[12px] text-muted">{ticker?.name}</span>
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <Tag tone="info">{meta.name}</Tag>
-            <StateTag row={row} bucket={bucket} />
-          </div>
+
+          <p className="prose-face mt-1 text-[12px] leading-relaxed text-muted">
+            {meta.name} · <StateText row={row} bucket={bucket} /> ·{" "}
+            <span className="tnum">{row.n}</span> trades ·{" "}
+            <span className={edge.confidence >= 0.8 ? "text-text" : undefined}>
+              {evidenceLabel(edge.confidence)}
+            </span>
+          </p>
         </div>
 
-        {/* The headline claim, with both halves of it visible. A single "edge"
-            number is what let a rule that loses 4% a year look like a winner. */}
-        <div className="flex shrink-0 items-start gap-5">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.1em] text-dim">Edge / yr</div>
-            <div className="tnum text-[17px] text-up">{fmtPct(edge.vsHold, 1)}</div>
+        <div className="shrink-0 text-right">
+          <div className="tnum text-[18px] leading-none text-up">
+            {fmtPct(edge.vsHold, 1)}
           </div>
-          <div className="text-[11px] leading-[1.6]">
-            <div className="text-dim">
-              rule <span className="tnum text-text">{fmtPct(edge.annStrategy, 1)}</span>/yr
-            </div>
-            <div className="text-dim">
-              holding <span className="tnum text-text">{fmtPct(edge.annHold, 1)}</span>/yr
-            </div>
-            <div className="text-dim">
-              cash <span className="tnum text-muted">{fmtPctPlain(cash, 1)}</span>/yr
-            </div>
+          <div className="mt-1 text-[10px] uppercase tracking-[0.1em] text-dim">
+            a year over holding
           </div>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <dl className="flex flex-wrap gap-x-5 gap-y-1.5 text-[11px]">
-          <Stat label="Trades" value={String(row.n)} hint={`over ${years} years`} />
-          <Stat label="Win rate" value={`${row.win}%`} />
-          <Stat label="In market" value={`${row.exp}%`} hint="of all days" />
-          <Stat label="Worst fall" value={fmtPctPlain(row.dd, 0)} tone="down" />
-          <Stat label="t-stat" value={row.t.toFixed(2)} hint="2+ is significant" />
-        </dl>
-
-        <Button size="sm" variant={added ? "ghost" : "outline"} onClick={onAdd} disabled={added}>
-          {added ? <Check /> : <Plus />}
-          {added ? "On watchlist" : "Watch"}
-        </Button>
-      </div>
-
+      {/* Warnings stay in the collapsed view. They are the reason not to make
+          a trade, which is never a detail. */}
       {edge.warnings.length > 0 ? (
-        <ul className="mt-3 space-y-1 border-t border-line-soft pt-2.5">
+        <ul className="mt-2.5 space-y-1">
           {edge.warnings.map((w) => (
-            <li key={w} className="prose-face flex items-start gap-2 text-[11px] leading-relaxed text-amber">
+            <li
+              key={w}
+              className="prose-face flex items-start gap-2 text-[11px] leading-relaxed text-amber"
+            >
               <AlertTriangle className="mt-0.5 size-3 shrink-0" />
               <span>{w}</span>
             </li>
           ))}
         </ul>
       ) : null}
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant={added ? "ghost" : "outline"} onClick={onAdd} disabled={added}>
+          {added ? <Check /> : <Plus />}
+          {added ? "On watchlist" : "Watch"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
+          <ChevronDown className={cn("transition-transform", open && "rotate-180")} />
+          {open ? "Less" : "Details"}
+        </Button>
+      </div>
+
+      {open ? (
+        <div className="mt-3 border-t border-line-soft pt-3">
+          <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-[11px]">
+            <span className="text-dim">
+              rule <span className="tnum text-text">{fmtPct(edge.annStrategy, 1)}</span>/yr
+            </span>
+            <span className="text-dim">
+              holding <span className="tnum text-text">{fmtPct(edge.annHold, 1)}</span>/yr
+            </span>
+            <span className="text-dim">
+              cash <span className="tnum text-muted">{fmtPctPlain(cash, 1)}</span>/yr
+            </span>
+          </div>
+          <dl className="flex flex-wrap gap-x-5 gap-y-1.5 text-[11px]">
+            <Stat label="Trades" value={String(row.n)} hint={`over ${years} years`} />
+            <Stat label="Win rate" value={`${row.win}%`} />
+            <Stat label="In market" value={`${row.exp}%`} hint="of all days" />
+            <Stat label="Worst fall" value={fmtPctPlain(row.dd, 0)} tone="down" />
+            <Stat label="t-stat" value={row.t.toFixed(2)} hint="2+ is significant" />
+          </dl>
+        </div>
+      ) : null}
+
     </li>
   );
 }
 
-/** What state the rule is in, said in a way that cannot be read as a tip. */
-function StateTag({ row, bucket }: { row: Pick["row"]; bucket: PickBucket }) {
+/**
+ * What state the rule is in, as part of a sentence rather than a badge.
+ *
+ * Badges read as labels you can skim past; this is the fact that decides
+ * whether the numbers beside it apply to the trade being offered, so it sits
+ * inline where it has to be read.
+ */
+function StateText({ row, bucket }: { row: Pick["row"]; bucket: PickBucket }) {
   if (bucket === "fresh") {
     return (
-      <Tag tone="up">
-        {row.days === 0 ? "entered today" : `entered ${row.days} session${row.days === 1 ? "" : "s"} ago`}
-        {row.open !== null ? ` · ${fmtPct(row.open, 1)}` : ""}
-      </Tag>
+      <span className="text-up">
+        {row.days === 0
+          ? "entered today"
+          : `entered ${row.days} session${row.days === 1 ? "" : "s"} ago`}
+      </span>
     );
   }
   if (bucket === "holding") {
-    return (
-      <Tag tone="neutral">
-        holding {row.days} sessions{row.open !== null ? ` · ${fmtPct(row.open, 1)}` : ""}
-      </Tag>
-    );
+    return <span>holding {row.days} sessions</span>;
   }
-  if (bucket === "nearing") {
-    return <Tag tone="amber">{row.prox}% of the way to triggering</Tag>;
-  }
-  return <Tag tone="neutral">out · {row.prox ?? 0}% to trigger</Tag>;
+  return (
+    <span className={bucket === "nearing" ? "text-amber" : undefined}>
+      out · {row.prox ?? 0}% to trigger
+    </span>
+  );
 }
 
 function Stat({
