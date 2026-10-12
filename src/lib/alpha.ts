@@ -116,6 +116,18 @@ export const getFactor = (id: FactorId): FactorMeta =>
 const mean = (xs: number[]) =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
 
+/**
+ * Middle value. The right summary for anything skewed, which holding periods
+ * badly are — a handful of trades that ran for months pull the mean somewhere
+ * no actual trade ever was.
+ */
+function median(xs: number[]): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
 function stdev(xs: number[]) {
   if (xs.length < 2) return 0;
   const m = mean(xs);
@@ -365,7 +377,37 @@ export type TradeRecord = {
   avgLossPct: number;
   bestPct: number;
   worstPct: number;
-  avgHoldDays: number;
+  /**
+   * Mean bars held. Kept because the average is the right input to some
+   * calculations, but it is NOT what to show under the word "typical" —
+   * hold lengths are badly skewed and a couple of long trades drag the mean
+   * far above anything that actually happened. On DG/riskAdjMomentum the mean
+   * is 32 bars and the median is 3.
+   */
+  avgHoldBars: number;
+  /** Median bars held — the honest answer to "how long is a typical trade". */
+  medianHoldBars: number;
+  /**
+   * Median CALENDAR days from entry to exit.
+   *
+   * A bar is a trading session, so a hold of 19 bars spans about 27 calendar
+   * days once weekends and holidays are counted. The app labelled bars as
+   * "days" for its whole life, which understates every holding period by
+   * roughly 40% — the opposite of harmless when you are trying to keep trades
+   * short.
+   */
+  medianHoldDays: number;
+  /**
+   * Average profit per completed trade, percent, after costs.
+   *
+   *   winRate x avgWin + lossRate x avgLoss
+   *
+   * The only one of these numbers that answers "does this make money". Win
+   * rate alone routinely says the opposite: FSLR/trendDistance wins 75% of its
+   * trades and still loses 1.5% on every one, because the quarter that lose
+   * lose six times what the winners make.
+   */
+  expectancyPct: number;
 };
 
 /** The current state of the rule, phrased for someone reading it cold. */
@@ -691,8 +733,21 @@ function simulate(
     worstPct: completed.length
       ? Math.min(...completed.map((t) => t.returnPct))
       : 0,
-    avgHoldDays: completed.length
-      ? mean(completed.map((t) => t.barsHeld))
+    avgHoldBars: completed.length ? mean(completed.map((t) => t.barsHeld)) : 0,
+    medianHoldBars: median(completed.map((t) => t.barsHeld)),
+    medianHoldDays: median(
+      completed.map((t) =>
+        t.exitDate
+          ? Math.round(
+              (Date.parse(`${t.exitDate}T00:00:00Z`) -
+                Date.parse(`${t.entryDate}T00:00:00Z`)) /
+                86_400_000,
+            )
+          : 0,
+      ),
+    ),
+    expectancyPct: completed.length
+      ? mean(completed.map((t) => t.returnPct))
       : 0,
   };
 

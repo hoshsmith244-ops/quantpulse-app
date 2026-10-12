@@ -13,7 +13,7 @@ import { useSyncPush } from "@/lib/use-sync-push";
 import { cn } from "@/lib/utils";
 
 /**
- * The four places you actually work.
+ * The three places you actually work.
  *
  * Guide and Membership were here too, and both already had a second entrance —
  * Guide sits in the status bar, Membership is the button on the right. Listing
@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
  * things you open daily further apart.
  */
 const NAV = [
-  { href: "/today", label: "Today" },
   { href: "/dashboard", label: "Terminal" },
   { href: "/screener", label: "Screener" },
   { href: "/watchlist", label: "Watchlist" },

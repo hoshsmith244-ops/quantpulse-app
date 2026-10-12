@@ -140,7 +140,9 @@ export async function LiveSample() {
         <Stat
           label="Typical hold"
           value={
-            record.completed ? `${record.avgHoldDays.toFixed(0)} days` : "—"
+            record.completed
+              ? `${record.medianHoldBars.toFixed(0)} sessions`
+              : "—"
           }
           tone="text-bright"
         />

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   CircleSlash,
@@ -17,7 +18,12 @@ import { CostControl } from "@/components/terminal/cost-control";
 import { TodayAction } from "@/components/terminal/today-action";
 import { displayPrice } from "@/components/terminal/price-display";
 import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
-import { verdict, type AlphaResult, type FactorMeta } from "@/lib/alpha";
+import {
+  verdict,
+  type AlphaResult,
+  type FactorMeta,
+  type TradeRecord,
+} from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
 import type { History, MarketContext } from "@/lib/symbols";
 import { cn } from "@/lib/utils";
@@ -384,7 +390,7 @@ export function SimpleView({
               </tbody>
             </table>
           </div>
-          <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-5">
             <Stat
               label="Win rate"
               value={`${record.winRatePct.toFixed(0)}%`}
@@ -400,12 +406,25 @@ export function SimpleView({
               value={fmtPct(record.avgLossPct, 1)}
               tone="down"
             />
+            {/*
+              The number the other three were hiding. A win rate is a count,
+              not a profit: this rule can win three trades in four and still
+              lose money on every one, if the losers are bigger than the
+              winners. Nothing on this page used to say which was happening.
+            */}
+            <Stat
+              label="Per trade"
+              value={fmtPct(record.expectancyPct, 2)}
+              tone={record.expectancyPct >= 0 ? "up" : "down"}
+            />
             <Stat
               label="Typical hold"
-              value={`${record.avgHoldDays.toFixed(0)} days`}
+              value={`${record.medianHoldBars.toFixed(0)} sessions`}
               tone="bright"
             />
           </div>
+
+          <TradeMath record={record} />
         </Panel>
       ) : null}
 
@@ -414,6 +433,79 @@ export function SimpleView({
         and slippage. Past performance does not predict future returns. This is
         an educational tool, not investment advice.
       </p>
+    </div>
+  );
+}
+
+/**
+ * The four statistics, read back as one sentence.
+ *
+ * Separately they invite the wrong conclusion. A 75% win rate reads as a good
+ * strategy; it is only good if the quarter that lose do not lose more than the
+ * three quarters make, and that comparison is arithmetic nobody should have to
+ * do in their head while deciding whether to trade.
+ */
+function TradeMath({ record }: { record: TradeRecord }) {
+  const { winRatePct, avgWinPct, avgLossPct, expectancyPct, medianHoldBars, medianHoldDays } =
+    record;
+
+  // The trap worth naming outright: wins most of the time, loses money anyway.
+  const winsButLoses = winRatePct >= 55 && expectancyPct < 0;
+  // Wanting short holds is the whole premise of a daily-bar tool; a rule that
+  // sits in a position for a month is a different instrument.
+  const slow = medianHoldBars >= 20;
+
+  return (
+    <div className="space-y-2 border-t border-line px-4 py-3">
+      <p className="prose-face max-w-2xl text-[12px] leading-relaxed text-muted">
+        It won <span className="tnum text-text">{winRatePct.toFixed(0)}%</span> of
+        its trades, making{" "}
+        <span className="tnum text-up">{fmtPct(avgWinPct, 1)}</span> on a winner
+        and <span className="tnum text-down">{fmtPct(avgLossPct, 1)}</span> on a
+        loser — which works out to{" "}
+        <span className={cn("tnum", expectancyPct >= 0 ? "text-up" : "text-down")}>
+          {fmtPct(expectancyPct, 2)}
+        </span>{" "}
+        on the average trade, after costs.
+      </p>
+
+      <p className="prose-face max-w-2xl text-[12px] leading-relaxed text-muted">
+        A typical trade ran{" "}
+        <span className="tnum text-text">{medianHoldBars.toFixed(0)}</span>{" "}
+        {medianHoldBars === 1 ? "session" : "sessions"}
+        {medianHoldDays > 0 ? (
+          <>
+            {" "}
+            — about{" "}
+            <span className="tnum text-text">{medianHoldDays.toFixed(0)}</span>{" "}
+            calendar {medianHoldDays === 1 ? "day" : "days"}
+          </>
+        ) : null}
+        . That is the middle trade, not the average: a couple of long holds pull
+        an average somewhere no real trade ever was.
+      </p>
+
+      {winsButLoses ? (
+        <p className="prose-face flex max-w-2xl items-start gap-2 text-[12px] leading-relaxed text-down">
+          <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+          <span>
+            It wins more often than it loses and still loses money. The losing
+            trades are bigger than the winning ones, so the win rate is telling
+            you the opposite of what matters.
+          </span>
+        </p>
+      ) : null}
+
+      {slow ? (
+        <p className="prose-face flex max-w-2xl items-start gap-2 text-[12px] leading-relaxed text-amber">
+          <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+          <span>
+            Positions are held for weeks at a time. That is a slow strategy —
+            your money is committed far longer per signal than the daily
+            rebalance this tool assumes.
+          </span>
+        </p>
+      ) : null}
     </div>
   );
 }
