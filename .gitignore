@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Strategy research: large, reproducible from scripts/research/
+.research-cache/
+scripts/research/results/train.json
+scripts/research/results/test.json

@@ -1,0 +1,25 @@
+{
+  "committedAt": "2026-10-12T22:09:08.135Z",
+  "selection": {
+    "momentum": {
+      "key": "momentum|21|e90|x70|h5|t0",
+      "baseline": "momentum|126|e60|x60|h-|t0"
+    },
+    "reversal": {
+      "key": "reversal|21|e90|x90|h-|t1",
+      "baseline": "reversal|5|e60|x60|h-|t0"
+    },
+    "riskAdjMomentum": {
+      "key": "riskAdjMomentum|126|e70|x50|h10|t0",
+      "baseline": "riskAdjMomentum|90|e60|x60|h-|t0"
+    },
+    "trendDistance": {
+      "key": "trendDistance|200|e70|x50|h-|t0",
+      "baseline": "trendDistance|50|e60|x60|h-|t0"
+    },
+    "volumeThrust": {
+      "key": "volumeThrust|50|e60|x40|h-|t0",
+      "baseline": "volumeThrust|20|e60|x60|h-|t0"
+    }
+  }
+}

@@ -78,7 +78,20 @@ export const FACTORS: FactorMeta[] = [
     paramLabel: "Moving average",
     min: 10,
     max: 200,
-    def: 50,
+    /**
+     * 200, chosen out of sample (scripts/research/). Tuned on three earlier
+     * three-year windows, judged only on the window the app shows today:
+     *
+     *               timing excess   t     worst trade   median hold
+     *   MA 50          +1.7%/yr    0.36      -85%          3
+     *   MA 200         +5.8%/yr    2.77      -47%          3
+     *
+     * Every MA-200 variant tested was positive in all three earlier windows;
+     * MA 50 and MA 100 only looked good because of the 2020 rebound, and
+     * neither was significant out of sample. Survives 50 bps round-trip costs
+     * (+3.6%/yr) where MA 50 turns negative (-2.3%/yr).
+     */
+    def: 200,
     family: "Mean reversion",
   },
   {
