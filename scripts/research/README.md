@@ -90,3 +90,87 @@ node scripts/research/sweep.mts train
 node scripts/research/sweep.mts test
 node scripts/research/report.mts
 ```
+
+---
+
+# Options research (October 2026)
+
+Question: can the strategies' data predict moves well enough to trade
+options, and where does any options edge actually live? Literature review:
+[`reports/Options edge evidence for retail app.md`](../../reports/Options%20edge%20evidence%20for%20retail%20app.md).
+
+## Data
+
+- **Stock bars** — the same 11-year Yahoo cache as above.
+- **Implied-vol indices** (`fetch-vol.mts`) — CBOE VIX, VIX9D, VXN, VXD, GVZ,
+  OVX from Yahoo, 2015–2026. Single-stock vol indices have no history there.
+- **Real option data** (`fetch-iv.mts`, `chain-calibrate.mts`) — DoltHub's
+  public [`post-no-preference/options`](https://www.dolthub.com/repositories/post-no-preference/options)
+  database, licensed **CC BY-SA 4.0** (attribution and share-alike apply if
+  any of it is shown in the app). Weekly 30-day at-the-money IV for 233 of our
+  tickers, May 2020 – Sep 2026, 69,711 stock-weeks; end-of-day chains with
+  bid/ask. Coverage starts mid-2020; a handful of days are missing at source;
+  `iv_month_ago` is empty after 2023, so month-ago IV is taken from the series
+  itself. Checks: its SPY IV tracks VIX at 0.97 correlation and reads ~3 vol
+  points lower (VIX includes out-of-the-money skew), and its `hv` field matches
+  our own 20-day realised vol (correlation 0.94).
+
+Train is through 2023-09-29, test after — the same split as the strategy work.
+
+## 1. The strategies' signals, as option trades — no edge (`signal-edge.mts`)
+
+35 pre-registered variants built only from the five strategies (stricter
+thresholds, agreement between strategies, VIX and SPY regimes, bearish
+readings for puts). Zero qualified on train: the best per-signal edge was about
+0.1 sd over 5 days with |t| < 2, against roughly 0.12–0.21 sd needed to break
+even buying at-the-money options. The bearish near-misses vanished on test
+(buying puts lost 4–21% per trade).
+
+With real IV (`iv-analysis.mts` §3), implied vol at a fresh signal is
+1.10–1.14x the vol realised afterwards — the same as for any stock (1.10–1.12x).
+The signals do not find mispriced options. Long calls on signal stocks were not
+significantly better than calls on all stocks in either period (best: Distance
+from trend, test +12.6% per trade vs +5.9% baseline, t 1.4; train -3.0% vs
+-0.9%).
+
+## 2. Variance premium — real, faded, mostly inside the spread
+
+Short 30-day ATM straddles priced at the real IV, held to expiry, per $ premium
+(`iv-analysis.mts` §1):
+
+| | train: mid / full spread | test: mid / full spread | test IV − RV |
+|---|---|---|---|
+| Index ETFs | +11.3% (t 3.0) / +9.3% (t 2.5) | +8.9% (t 2.0) / +6.9% (t 1.5) | +1.3 pt |
+| Single stocks | +6.5% (t 3.0) / +2.5% (t 1.2) | +2.3% (t 0.8) / −1.7% (t −1.0) | +1.1 pt |
+
+The index premium halved between periods and is not significant after costs on
+test; the single-stock premium is gone after costs. Earlier VIX-based estimates
+(`vol.mts`) overstated it, as the literature warns. Tails are severe: the worst
+30-day index straddle since 2016 lost ~8x its premium.
+
+## 3. Implied vs historical vol (Goyal–Saretto) — real signal, priced away by spreads
+
+Weekly quintiles of log(HV_252 / IV) on single stocks; long straddle returns
+(§2). Test, at mid: IV-richest quintile −6.3%, IV-cheapest +2.1%, long-cheap /
+short-rich +8.4% per 30 days (t 3.2) — stronger than on train (+5.4%, t 2.4).
+At a typical retail fill (50% of the spread) +4.4% (t 1.7); at the full spread
++0.5%. The ordering is the durable part: **buying options when IV is rich
+versus its one-year history lost 8–11% a month** in both periods.
+
+## 4. One-month IV change — no stock-return signal
+
+Quintiles of IV / IV a month ago predict nothing about the next month's stock
+return: Q1−Q5 +0.05% (t 0.2) train, +0.30% (t 0.8) test (§4).
+
+## What this means for the app
+
+- None of the five strategies, in any tested form, gives an options edge after
+  realistic retail costs. Directional option suggestions should not be
+  presented as one.
+- The durable, testable value is in *instrument choice*: IV rich vs its own
+  history (avoid buying premium), the implied move vs what a signal has
+  historically produced, and cost — at-the-money, liquid contracts, limit
+  orders near the mid. The literature review finds cost avoidance is the
+  largest documented "edge" available to retail traders.
+- Index premium selling is positive but has faded and is not significant after
+  costs on 2023–2026 data; it should not be marketed as an edge either.

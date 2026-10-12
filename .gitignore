@@ -45,3 +45,5 @@ next-env.d.ts
 .research-cache/
 scripts/research/results/train.json
 scripts/research/results/test.json
+scripts/research/results/signal-train.json
+scripts/research/results/signal-test.json
