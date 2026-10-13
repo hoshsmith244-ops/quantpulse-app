@@ -130,3 +130,25 @@ export function usePersistedParams(): [
 
   return [params, setParams];
 }
+
+const noSubscribe = () => () => {};
+
+/**
+ * False during the hydration render, true from the first client render on.
+ *
+ * During hydration usePersistedParams deliberately returns the server snapshot
+ * -- DEFAULTS, i.e. AAPL -- so the markup matches. Any effect keyed on the
+ * symbol therefore ran once for AAPL before re-running for the ticker actually
+ * saved: every terminal load fetched AAPL's history, sentiment and context for
+ * nothing, which was also enough to trip the sentiment rate limit. Fetchers
+ * wait on this instead. It flips in the same re-render that swaps in the saved
+ * params, and is already true on client-side navigation, where there is no
+ * hydration.
+ */
+export function useHydrated(): boolean {
+  return React.useSyncExternalStore(
+    noSubscribe,
+    () => true,
+    () => false,
+  );
+}

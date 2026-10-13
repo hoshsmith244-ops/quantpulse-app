@@ -18,6 +18,7 @@ import { getFactor } from "@/lib/alpha";
 import { fmtPct } from "@/lib/format";
 import { useAlpha } from "@/lib/use-alpha";
 import { useMode } from "@/lib/use-mode";
+import { useHydrated } from "@/lib/use-persisted-params";
 import { cn } from "@/lib/utils";
 
 export function Workspace() {
@@ -27,7 +28,8 @@ export function Workspace() {
 
   const [mode, setMode] = useMode();
   // One poll shared by the header readout and the context panel below.
-  const context = useMarketContext(params.symbol);
+  const hydrated = useHydrated();
+  const context = useMarketContext(hydrated ? params.symbol : null);
 
   const quote = state.status === "ready" ? state.history.quote : null;
 

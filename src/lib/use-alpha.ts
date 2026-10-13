@@ -5,6 +5,7 @@ import * as React from "react";
 import { analyse, getFactor, type AlphaResult, type FactorId } from "./alpha";
 import type { History, SentimentSeries } from "./symbols";
 import {
+  useHydrated,
   usePersistedParams,
   DEFAULTS,
   type Params,
@@ -36,10 +37,14 @@ export type State =
 export function useAlpha() {
   // Persisted, so leaving for the guide and coming back keeps your ticker.
   const [params, setParams] = usePersistedParams();
+  // Not before hydration: until then params.symbol is the AAPL default, not
+  // the saved ticker. See useHydrated.
+  const hydrated = useHydrated();
   const [loaded, setLoaded] = React.useState<Loaded | null>(null);
   const [sentiment, setSentiment] = React.useState<SentimentSeries | null>(null);
 
   React.useEffect(() => {
+    if (!hydrated) return;
     let cancelled = false;
     const symbol = params.symbol;
 
@@ -69,11 +74,12 @@ export function useAlpha() {
     return () => {
       cancelled = true;
     };
-  }, [params.symbol]);
+  }, [params.symbol, hydrated]);
 
   // Sentiment is optional — it needs an API key — so the factor that depends
   // on it stays hidden unless real data comes back.
   React.useEffect(() => {
+    if (!hydrated) return;
     let cancelled = false;
     const url = `/api/sentiment?symbol=${encodeURIComponent(params.symbol)}`;
 
@@ -89,7 +95,7 @@ export function useAlpha() {
     return () => {
       cancelled = true;
     };
-  }, [params.symbol]);
+  }, [params.symbol, hydrated]);
 
   const state: State = React.useMemo(() => {
     if (!loaded || loaded.symbol !== params.symbol) return { status: "loading" };

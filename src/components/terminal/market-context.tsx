@@ -11,11 +11,13 @@ import { cn } from "@/lib/utils";
 /** Poll while the page is open; extended-hours prints move continuously. */
 const REFRESH_MS = 60_000;
 
-export function useMarketContext(symbol: string) {
+/** Pass null to hold off -- the terminal does until its saved ticker is known. */
+export function useMarketContext(symbol: string | null) {
   const [data, setData] = React.useState<MarketContext | null>(null);
   const [loadedFor, setLoadedFor] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    if (!symbol) return;
     let cancelled = false;
 
     const load = async () => {
@@ -46,7 +48,7 @@ export function useMarketContext(symbol: string) {
     };
   }, [symbol]);
 
-  return loadedFor === symbol ? data : null;
+  return symbol && loadedFor === symbol ? data : null;
 }
 
 const timeOf = (ms: number) =>
