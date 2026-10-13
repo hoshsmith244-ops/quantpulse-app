@@ -320,127 +320,114 @@ export function movesAfter(bars: Bar[], entries: number[], sessions: number): Mo
 }
 
 // ---------------------------------------------------------------------------
-// Structures
+// Buying calls and puts
 // ---------------------------------------------------------------------------
 
-export type Leg = { side: "buy" | "sell"; right: Right; strike: number; bid: number; ask: number; mid: number };
+/** Per-share P&L at expiry for a bought option. */
+export function payoffAtExpiry(right: Right, strike: number, premium: number, price: number): number {
+  return Math.max(0, right === "call" ? price - strike : strike - price) - premium;
+}
 
-export type Structure = {
-  id: "long-call" | "call-debit-spread" | "bull-put-spread";
-  name: string;
-  legs: Leg[];
-  /** Positive = you pay (debit). Negative = you receive (credit). At mid. */
-  net: number;
-  /** The same, filled at the far side of every leg -- the worst case. */
-  natural: number;
-  /** Per share. Null = unlimited. */
-  maxGain: number | null;
-  maxLoss: number;
-  breakeven: number;
-  /** Risk-neutral chance of finishing past breakeven. */
-  chance: number;
-  /** One sentence on when this structure fits. */
-  fit: string;
+/** Time decay, per share per calendar day, at constant vol. Negative for a buyer. */
+export function bsThetaPerDay(right: Right, S: number, K: number, T: number, sigma: number, r = RATE): number {
+  const dt = 1 / 365;
+  if (T <= dt) return payoffAtExpiry(right, K, bsPrice(right, S, K, T, sigma, r), S);
+  return bsPrice(right, S, K, T - dt, sigma, r) - bsPrice(right, S, K, T, sigma, r);
+}
+
+export type Contract = {
+  right: Right;
+  strike: number;
+  bid: number;
+  ask: number;
+  /** What a buyer realistically pays per share: the mid, or the ask when one-sided. */
+  premium: number | null;
+  /** Quoted spread as a share of mid. */
+  spread: number | null;
+  iv: number | null;
+  delta: number | null;
+  thetaPerDay: number | null;
+  breakeven: number | null;
+  /** Move from spot to breakeven, as a positive share: up for calls, down for puts. */
+  needMove: number | null;
+  /** Risk-neutral chance of finishing past breakeven -- what the price implies. */
+  chanceMarket: number | null;
+  moneyness: "itm" | "atm" | "otm";
+  openInterest: number;
+  volume: number;
 };
 
-function quote(list: OptionQuote[], strike: number): OptionQuote | undefined {
-  return list.find((q) => q.strike === strike);
-}
+/**
+ * The strikes around the money for one side of one expiry, with what a buyer
+ * needs to know about each.
+ */
+export function contractsFor(chain: ExpiryChain, spot: number, right: Right, around = 8): Contract[] {
+  const list = (right === "call" ? chain.calls : chain.puts).slice().sort((a, b) => a.strike - b.strike);
+  if (!list.length) return [];
+  const K0 = atmStrike(chain, spot);
+  const at = Math.max(0, list.findIndex((q) => q.strike === K0));
+  const T = yearsTo(chain.days);
+  const fallbackIv = atmIv(chain, spot);
 
-function leg(side: Leg["side"], right: Right, q: OptionQuote): Leg | null {
-  const m = midOf(q);
-  return m ? { side, right, strike: q.strike, bid: q.bid, ask: q.ask, mid: m } : null;
-}
-
-/** Nearest listed strike at or beyond a level, in the given direction. */
-function strikeBeyond(list: OptionQuote[], level: number, dir: 1 | -1): OptionQuote | undefined {
-  const ok = list.filter((q) => (dir === 1 ? q.strike >= level : q.strike <= level) && midOf(q));
-  return ok.sort((a, b) => dir * (a.strike - b.strike))[0];
+  return list.slice(Math.max(0, at - around), at + around + 1).map((q) => {
+    const mid = midOf(q);
+    const premium = mid ?? (q.ask > 0 ? q.ask : null);
+    const iv = contractIv(right, q, spot, chain.days) ?? fallbackIv;
+    const breakeven = premium === null ? null : right === "call" ? q.strike + premium : q.strike - premium;
+    const needMove = breakeven === null ? null : right === "call" ? breakeven / spot - 1 : 1 - breakeven / spot;
+    const chanceMarket =
+      breakeven === null || iv === null || breakeven <= 0
+        ? null
+        : right === "call"
+          ? probAbove(spot, breakeven, T, iv)
+          : 1 - probAbove(spot, breakeven, T, iv);
+    return {
+      right,
+      strike: q.strike,
+      bid: q.bid,
+      ask: q.ask,
+      premium,
+      spread: spreadPct(q),
+      iv,
+      delta: iv ? bsDelta(right, spot, q.strike, T, iv) : null,
+      thetaPerDay: iv ? bsThetaPerDay(right, spot, q.strike, T, iv) : null,
+      breakeven,
+      needMove,
+      chanceMarket,
+      moneyness: q.strike === K0 ? "atm" : (right === "call" ? q.strike < spot : q.strike > spot) ? "itm" : "otm",
+      openInterest: q.openInterest,
+      volume: q.volume,
+    };
+  });
 }
 
 /**
- * Three ways to express a BULLISH view on one expiry, priced from the live
- * chain. The order depends on how rich implied vol is: when options are
- * expensive relative to other stocks, structures that sell some premium back
- * go first.
+ * How often this stock's own `sessions`-day move has gone past `need` in the
+ * bars given, with the average move (the trend) removed.
  *
- * Bullish only, because every strategy here is long-only: "out" means no
- * signal, not a bearish one.
+ * The trend comes out because a stock that rose for three years makes every
+ * call look good on history alone -- that is the bull market, not the option.
+ * What remains is how much the stock actually moves, which is exactly what an
+ * option's price is a bet on.
  */
-export function bullishStructures(chain: ExpiryChain, spot: number, iv: number, move: number, bucket: IvBucket | null): Structure[] {
-  const T = yearsTo(chain.days);
-  const K = atmStrike(chain, spot);
-  if (K === null) return [];
-  const out: Structure[] = [];
+export function historicalChance(bars: Bar[], sessions: number, need: number, right: Right): number | null {
+  if (bars.length < sessions + 60) return null;
+  const rs: number[] = [];
+  for (let i = 0; i + sessions < bars.length; i++) rs.push(Math.log(bars[i + sessions].close / bars[i].close));
+  const mean = rs.reduce((a, b) => a + b, 0) / rs.length;
+  const target = right === "call" ? Math.log(1 + need) : need < 1 ? Math.log(1 - need) : -Infinity;
+  const hits = rs.filter((r) => (right === "call" ? r - mean > target : r - mean < target)).length;
+  return hits / rs.length;
+}
 
-  const atmCall = quote(chain.calls, K);
-  const lc = atmCall && leg("buy", "call", atmCall);
-  if (lc) {
-    out.push({
-      id: "long-call",
-      name: "Long call",
-      legs: [lc],
-      net: lc.mid,
-      natural: lc.ask,
-      maxGain: null,
-      maxLoss: lc.mid,
-      breakeven: K + lc.mid,
-      chance: probAbove(spot, K + lc.mid, T, iv),
-      fit: "Most upside, but you pay for all the implied vol. Only reasonable when IV is not rich.",
-    });
-  }
-
-  const upper = strikeBeyond(chain.calls, spot * (1 + move), 1);
-  const short = upper && upper.strike > K ? leg("sell", "call", upper) : null;
-  if (lc && short) {
-    const net = lc.mid - short.mid;
-    const width = short.strike - lc.strike;
-    if (net > 0 && net < width) {
-      out.push({
-        id: "call-debit-spread",
-        name: "Call debit spread",
-        legs: [lc, short],
-        net,
-        natural: lc.ask - short.bid,
-        maxGain: width - net,
-        maxLoss: net,
-        breakeven: lc.strike + net,
-        chance: probAbove(spot, lc.strike + net, T, iv),
-        fit: "Caps the upside at the market's own expected move and sells back premium -- cheaper than a long call when IV is elevated.",
-      });
-    }
-  }
-
-  const sellPut = strikeBeyond(chain.puts, spot * (1 - move), -1);
-  const buyPut = sellPut ? strikeBeyond(chain.puts, sellPut.strike - Math.max(spot * 0.025, 0.01), -1) : undefined;
-  const sp = sellPut && leg("sell", "put", sellPut);
-  const bp = buyPut && buyPut.strike < (sellPut?.strike ?? 0) ? leg("buy", "put", buyPut) : null;
-  if (sp && bp) {
-    const credit = sp.mid - bp.mid;
-    const width = sp.strike - bp.strike;
-    if (credit > 0 && credit < width) {
-      out.push({
-        id: "bull-put-spread",
-        name: "Bull put spread",
-        legs: [sp, bp],
-        net: -credit,
-        natural: -(sp.bid - bp.ask),
-        maxGain: credit,
-        maxLoss: width - credit,
-        breakeven: sp.strike - credit,
-        chance: probAbove(spot, sp.strike - credit, T, iv),
-        fit: "Gets paid if the stock simply holds above the market's expected downside. Puts rich premium on your side, with the loss capped.",
-      });
-    }
-  }
-
-  const rank: Record<Structure["id"], number> =
-    bucket !== null && bucket <= 1
-      ? { "bull-put-spread": 0, "call-debit-spread": 1, "long-call": 2 }
-      : bucket !== null && bucket >= 3
-        ? { "long-call": 0, "call-debit-spread": 1, "bull-put-spread": 2 }
-        : { "call-debit-spread": 0, "long-call": 1, "bull-put-spread": 2 };
-  return out.sort((a, b) => rank[a.id] - rank[b.id]);
+/**
+ * The contract to look at first: at the money. Not a prediction -- it is where
+ * spreads are tightest (about 4% of premium round trip, against 14-28% out of
+ * the money; Bryzgalova, Pavlova & Sikorskaya 2023) and where the option most
+ * directly expresses a view on direction rather than a lottery on a big move.
+ */
+export function suggestedContract(contracts: Contract[]): Contract | null {
+  return contracts.find((c) => c.moneyness === "atm" && c.premium !== null) ?? null;
 }
 
 /** True when an earnings date falls on or before the expiry. */

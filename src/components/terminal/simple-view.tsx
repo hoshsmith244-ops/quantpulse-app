@@ -223,7 +223,6 @@ export function SimpleView({
         bars={history.bars}
         result={result}
         factor={factor}
-        marketOpen={context?.session === "regular"}
       />
 
       <MarketContextPanel context={context} />

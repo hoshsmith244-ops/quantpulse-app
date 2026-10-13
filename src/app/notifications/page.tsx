@@ -31,7 +31,6 @@ import {
   useNotifications,
   type SignalEvent,
 } from "@/lib/notifications";
-import { useAccount } from "@/lib/use-account";
 import { useWatchlist } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -72,14 +71,6 @@ export default function NotificationsPage() {
     getPermission,
     () => "default" as const,
   );
-  const emailOn = React.useSyncExternalStore(
-    subscribeStore,
-    () => getPrefs().email === true,
-    () => false,
-  );
-  // The email job needs an account: it runs on a server and has to know where
-  // to send the message.
-  const { session, email } = useAccount();
 
   const toggleBrowser = async () => {
     if (browserOn) {
@@ -196,54 +187,15 @@ export default function NotificationsPage() {
               </p>
             ) : null}
 
-            {/* The only delivery that survives a closed tab. */}
-            <div className="flex items-start justify-between gap-6 border-t border-line pt-3">
-              <div>
-                <p className="text-[13px] text-bright">
-                  Email during the pre-close window
-                </p>
-                <p className="prose-face mt-1 max-w-lg text-[12px] leading-relaxed text-muted">
-                  A scheduled job checks your watchlist at{" "}
-                  {ACTION_LEAD_MIN} minutes to the bell and emails you if a rule
-                  would trigger — <span className="text-bright">whether or
-                  not anything is open</span>. The only alert here that reaches
-                  you when the app is shut.
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant={emailOn ? "primary" : "outline"}
-                onClick={() => setPrefs({ ...getPrefs(), email: !emailOn })}
-                disabled={!session}
-              >
-                {emailOn ? "On" : "Turn on"}
-              </Button>
-            </div>
-
-            {!session ? (
-              <p className="prose-face flex items-start gap-2 text-[11px] leading-relaxed text-dim">
-                <Info className="mt-0.5 size-3 shrink-0" />
-                <span>
-                  Requires an account — the job runs on a server and has to know
-                  where to send it. Sign in on the{" "}
-                  <Link href="/membership" className="text-amber hover:underline">
-                    membership page
-                  </Link>
-                  .
-                </span>
-              </p>
-            ) : emailOn ? (
-              <p className="prose-face flex items-start gap-2 text-[11px] leading-relaxed text-dim">
-                <Info className="mt-0.5 size-3 shrink-0" />
-                <span>
-                  Sending to <span className="text-muted">{email}</span>. The
-                  setting travels with your account, so it applies no matter
-                  which device you set it on.
-                </span>
-              </p>
-            ) : null}
-
-            {session && emailOn ? <EmailSetupTest /> : null}
+            {/* In-app only, by design: no email, no server job. */}
+            <p className="prose-face flex items-start gap-2 border-t border-line pt-3 text-[11px] leading-relaxed text-dim">
+              <Info className="mt-0.5 size-3 shrink-0" />
+              <span>
+                Notifications live in the app: the bell above, and desktop
+                notifications if you switch them on. Both need a QuantPulse tab
+                open. Nothing is sent by email.
+              </span>
+            </p>
           </div>
         </Panel>
 
@@ -325,88 +277,6 @@ export default function NotificationsPage() {
         </Panel>
       </div>
     </AppShell>
-  );
-}
-
-/**
- * "Will this actually reach me?", answered by pressing a button.
- *
- * The scheduled job only speaks inside a ten-minute window, so a mistake in the
- * server setup — a missing key, a stale deployment, a preference that never
- * synced — stays invisible until the one moment it costs you a trade. This
- * sends one clearly-marked email through the real delivery path so the whole
- * chain is proven at a time of your choosing.
- */
-function EmailSetupTest() {
-  const [state, setState] = React.useState<
-    | { phase: "idle" }
-    | { phase: "running" }
-    | { phase: "done"; ok: boolean; message: string }
-  >({ phase: "idle" });
-
-  const run = async () => {
-    setState({ phase: "running" });
-    try {
-      const res = await fetch("/api/alerts/self-test", { method: "POST" });
-      const body = (await res.json()) as {
-        ok?: boolean;
-        problem?: string;
-        email?: string;
-        watching?: number;
-      };
-      setState({
-        phase: "done",
-        ok: body.ok === true,
-        message: body.ok
-          ? `Sent to ${body.email}. It should arrive within a minute — check spam if not, and mark it "not spam" so real alerts land in your inbox.`
-          : (body.problem ?? "The test did not complete."),
-      });
-    } catch {
-      setState({
-        phase: "done",
-        ok: false,
-        message: "Could not reach the server. Check your connection and try again.",
-      });
-    }
-  };
-
-  return (
-    <div className="border-t border-line pt-3">
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <p className="text-[13px] text-bright">Test the setup</p>
-          <p className="prose-face mt-1 max-w-lg text-[12px] leading-relaxed text-muted">
-            Sends one email now, marked clearly as a test. Worth doing once:
-            the real job only speaks inside a ten-minute window, so anything
-            broken stays hidden until the moment it matters.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={run}
-          disabled={state.phase === "running"}
-        >
-          {state.phase === "running" ? "Sending…" : "Send test"}
-        </Button>
-      </div>
-
-      {state.phase === "done" ? (
-        <p
-          className={cn(
-            "prose-face mt-3 flex items-start gap-2 text-[11px] leading-relaxed",
-            state.ok ? "text-up" : "text-down",
-          )}
-        >
-          {state.ok ? (
-            <Check className="mt-0.5 size-3 shrink-0" />
-          ) : (
-            <Info className="mt-0.5 size-3 shrink-0" />
-          )}
-          <span>{state.message}</span>
-        </p>
-      ) : null}
-    </div>
   );
 }
 

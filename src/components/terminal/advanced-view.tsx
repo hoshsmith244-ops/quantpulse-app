@@ -75,7 +75,6 @@ export function AdvancedView({
           bars={bars}
           result={result}
           factor={getFactor(params.factor)}
-          marketOpen={context?.session === "regular"}
         />
       </div>
 

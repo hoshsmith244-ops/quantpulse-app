@@ -24,7 +24,7 @@ Then open <http://localhost:3000>.
 | `npm run dev` | Dev server on port 3000 |
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
-| `npm run test` | Bar hygiene, pre-close window, and sync merge suites |
+| `npm run test` | Bar hygiene, pre-close window, sync merge, edge model, trade record and options-maths suites |
 | `npm run check` | typecheck + lint + test + build |
 | `npm run deploy` | Pre-deploy gate, then commit and push (Git Bash) |
 
@@ -160,35 +160,18 @@ an `InlineScript` helper that renders as a real script on the server and inert
 > promise of the colour amber — `text-amber` renders cyan when cyan is selected.
 > Renaming it would touch nearly every component for no user-visible gain.
 
-## Scheduled alerts and rebuilds
+## Nightly rebuild
 
-Two background jobs, on deliberately different schedulers.
+The screener rebuild runs as a GitHub Action on weekdays at 21:30 UTC. It
+commits `public/screen.json` and `public/iv-cutoffs.json` (the day's
+cross-sectional IV rankings behind the Options tab's rich/cheap badge), which
+triggers a deploy. Scheduled runs on GitHub are routinely late, which does not
+matter here — the rebuild only has to happen some time after the bell. It
+refuses to commit a result that fails a sanity check, because a run where every
+fetch failed would still produce valid JSON.
 
-**The screener rebuild** runs as a GitHub Action on weekdays at 21:30 UTC and
-commits `public/screen.json`, which triggers a deploy. Scheduled runs on GitHub
-are routinely late, which does not matter here — the rebuild only has to happen
-some time after the bell. It refuses to commit a result that fails a sanity
-check, because a run where every fetch failed would still produce valid JSON.
-
-**The pre-close alert** is the opposite problem: the window is ten minutes wide,
-so a scheduler that is "usually about right" is useless. Supabase `pg_cron`
-calls `/api/cron/pre-close` every three minutes across a broad band, and **the
-endpoint decides for itself** whether the market is genuinely inside the window
-by reading the venue's real session end. Daylight saving, market holidays, early
-closes and scheduler drift all resolve in that one check rather than in a cron
-expression that rots twice a year. Calls landing outside the window return
-immediately without touching market data.
-
-Setup is in `.env.example` and [`supabase/alerts.sql`](supabase/alerts.sql). It
-is entirely optional: with nothing configured the endpoint reports that it is
-switched off and the rest of the app is unaffected.
-
-The alert email is a pure formatter in `src/lib/cron/compose-alert.ts` with no
-imports at all, so a test can drive it directly. That discipline earns its keep
-because the email **is** the product — it lands on a phone, is read in a hurry,
-and is acted on with real money. A stand-down always leads, in the subject and
-in the body, since the reader may be part-way through placing the very trade it
-withdraws.
+Notifications are in-app only: the bell, and desktop notifications while a tab
+is open. Nothing is emailed and no server job contacts users.
 
 ## The pre-close action window
 

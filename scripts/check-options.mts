@@ -12,8 +12,10 @@ import {
   atmIv,
   atmStrike,
   bsPrice,
-  bullishStructures,
+  bsThetaPerDay,
+  contractsFor,
   earningsBefore,
+  historicalChance,
   hv252,
   impliedMove,
   impliedVol,
@@ -21,9 +23,11 @@ import {
   liquidityOf,
   midOf,
   movesAfter,
+  payoffAtExpiry,
   probAbove,
   RATE,
   sessionsIn,
+  suggestedContract,
   type ExpiryChain,
   type IvCutoffs,
   type OptionQuote,
@@ -115,34 +119,54 @@ console.log("\nMoves after past signals");
   check("30 calendar days is about 21 sessions", sessionsIn(30), 21);
 }
 
-console.log("\nStructures");
+console.log("\nBuying calls and puts");
 {
   const S = 100, ch = chainAt(S, 0.3, 30);
-  const move = impliedMove(ch, S)!;
-  const all = bullishStructures(ch, S, 0.3, move, 2);
-  const by = Object.fromEntries(all.map((s) => [s.id, s]));
-  check("all three structures priced", all.map((s) => s.id).sort(), ["bull-put-spread", "call-debit-spread", "long-call"]);
+  const calls = contractsFor(ch, S, "call");
+  const puts = contractsFor(ch, S, "put");
+  check("strikes either side of the money", calls.length, 17);
+  const c = suggestedContract(calls)!, p = suggestedContract(puts)!;
+  check("the suggested call is at the money", [c.strike, c.moneyness], [100, "atm"]);
+  check("the suggested put is at the money", [p.strike, p.moneyness], [100, "atm"]);
+  near("premium is the mid", c.premium, midOf(ch.calls.find((x) => x.strike === 100)!)!, 1e-9);
+  near("call breakeven is strike plus premium", c.breakeven, 100 + c.premium!, 1e-9);
+  near("put breakeven is strike minus premium", p.breakeven, 100 - p.premium!, 1e-9);
+  near("call needs a rise to breakeven", c.needMove, c.breakeven! / S - 1, 1e-9);
+  near("put needs a fall to breakeven, stated as a positive share", p.needMove, 1 - p.breakeven! / S, 1e-9);
+  check("an ATM call has delta near +0.5", c.delta! > 0.45 && c.delta! < 0.6, true);
+  check("an ATM put has delta near -0.5", p.delta! < -0.4 && p.delta! > -0.55, true);
+  check("a bought option loses value each day", c.thetaPerDay! < 0 && p.thetaPerDay! < 0, true);
+  check("reaching breakeven is less likely than finishing above the strike", c.chanceMarket! < 0.5, true);
+  check("a lower call strike is in the money", calls.find((x) => x.strike === 90)!.moneyness, "itm");
+  check("a higher put strike is in the money", puts.find((x) => x.strike === 110)!.moneyness, "itm");
+  check("deeper out of the money needs a bigger move", calls.find((x) => x.strike === 110)!.needMove! > c.needMove!, true);
 
-  const lc = by["long-call"];
-  near("long call costs the ATM call mid", lc.net, midOf(ch.calls.find((x) => x.strike === 100)!)!, 1e-9);
-  near("long call breakeven is strike plus premium", lc.breakeven, 100 + lc.net, 1e-9);
-  check("long call upside is unlimited", lc.maxGain, null);
+  near("call payoff below the strike is minus the premium", payoffAtExpiry("call", 100, 3, 90), -3, 1e-12);
+  near("call payoff above", payoffAtExpiry("call", 100, 3, 110), 7, 1e-12);
+  near("put payoff below the strike", payoffAtExpiry("put", 100, 3, 90), 7, 1e-12);
+  near("put payoff at breakeven is zero", payoffAtExpiry("put", 100, 3, 97), 0, 1e-12);
+  near(
+    "theta over a day matches the price change",
+    bsThetaPerDay("call", 100, 100, 0.25, 0.3),
+    bsPrice("call", 100, 100, 0.25 - 1 / 365, 0.3) - bsPrice("call", 100, 100, 0.25, 0.3),
+    1e-12,
+  );
 
-  const ds = by["call-debit-spread"];
-  const width = ds.legs[1].strike - ds.legs[0].strike;
-  near("debit spread: max gain + max loss = strike width", ds.maxGain! + ds.maxLoss, width, 1e-9);
-  check("debit spread sells the strike at or beyond the expected move", ds.legs[1].strike >= S * (1 + move), true);
-  check("worst fill costs more than mid", ds.natural > ds.net, true);
-
-  const bp = by["bull-put-spread"];
-  check("bull put spread is a credit", bp.net < 0, true);
-  near("bull put: credit + max loss = strike width", -bp.net + bp.maxLoss, bp.legs[0].strike - bp.legs[1].strike, 1e-9);
-  check("bull put sells a strike at or below the expected downside", bp.legs[0].strike <= S * (1 - move), true);
-  check("a credit spread is likelier to finish past breakeven than a long call", bp.chance > lc.chance, true);
-
-  check("rich IV leads with the bull put spread", bullishStructures(ch, S, 0.3, move, 0)[0].id, "bull-put-spread");
-  check("cheap IV leads with the long call", bullishStructures(ch, S, 0.3, move, 4)[0].id, "long-call");
-  check("average IV leads with the debit spread", bullishStructures(ch, S, 0.3, move, 2)[0].id, "call-debit-spread");
+  // A stock alternating +2% / -2% days, trending up 0.5% a day on top.
+  const bars: Bar[] = [];
+  let px = 100;
+  for (let i = 0; i < 400; i++) {
+    px *= (i % 2 ? 1.02 : 1 / 1.02) * 1.005;
+    bars.push({ date: `d${i}`, open: px, high: px, low: px, close: px, volume: 1 });
+  }
+  // Over 2 sessions the zigzag cancels, so with the trend removed every
+  // window moves ~0: neither side should ever look reachable.
+  check("a 1% move is never reached once the trend is removed", historicalChance(bars, 2, 0.01, "call"), 0);
+  check("...for puts too", historicalChance(bars, 2, 0.01, "put"), 0);
+  // Over 1 session the stock moves ~2% either way.
+  near("a 1% one-day move is reached about half the time, upward", historicalChance(bars, 1, 0.01, "call"), 0.5, 0.01);
+  near("...and about half the time downward", historicalChance(bars, 1, 0.01, "put"), 0.5, 0.01);
+  check("too little history returns nothing", historicalChance(bars.slice(0, 50), 5, 0.01, "call"), null);
 }
 
 console.log("\nEarnings");
