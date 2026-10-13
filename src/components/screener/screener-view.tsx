@@ -23,6 +23,7 @@ import { Panel, PanelHead, Tag } from "@/components/ui/terminal";
 import { Button } from "@/components/ui/button";
 import { FACTORS, getFactor } from "@/lib/alpha";
 import { edgeOf } from "@/lib/edge";
+import { IV_BUCKETS, ivBucket, type IvCutoffs } from "@/lib/options";
 import { fmtInt, fmtPct } from "@/lib/format";
 import {
   CAP_LABELS,
@@ -48,6 +49,7 @@ import {
   type PeBucket,
   type ScreenData,
   type ScreenRow,
+  type ScreenTicker,
   type SortKey,
   type VerdictLevel,
   type VolBucket,
@@ -743,8 +745,8 @@ function ResultsTable({
    * wrong anchor to leave in someone's head. One unit everywhere.
    */
   const headers = advanced
-    ? ["Ticker", "Strategy", "Now", "Return / yr", "Holding / yr", "Edge / yr", "Trades", "Win", "Out of sample", "t", "Cap", "P/E", "Liquidity", "Vol", "Checks", ""]
-    : ["Ticker", "Strategy", "Now", "Return / yr", "Holding / yr", "Edge / yr", "Trades", "Win", ""];
+    ? ["Ticker", "Strategy", "Now", "Return / yr", "Holding / yr", "Edge / yr", "Trades", "Win", "IV", "Out of sample", "t", "Cap", "P/E", "Liquidity", "Vol", "Checks", ""]
+    : ["Ticker", "Strategy", "Now", "Return / yr", "Holding / yr", "Edge / yr", "Trades", "Win", "IV", ""];
 
   return (
     <div className="overflow-x-auto">
@@ -833,6 +835,9 @@ function ResultsTable({
 
                 <td className="tnum px-3 py-2 text-right text-muted">{r.n}</td>
                 <td className="tnum px-3 py-2 text-right text-muted">{r.win}%</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  <IvCell t={t} cutoffs={data.ivCutoffs ?? null} />
+                </td>
 
                 {advanced ? (
                   <>
@@ -1124,5 +1129,29 @@ function Select({
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * Options on this ticker, ranked against the rest of the universe that day by
+ * implied vol relative to one-year realised vol -- the same rule and cutoffs as
+ * the terminal's badge. Tested on single stocks only, so ETFs show their IV
+ * without a ranking.
+ */
+function IvCell({ t, cutoffs }: { t: ScreenTicker | undefined; cutoffs: IvCutoffs | null }) {
+  if (!t?.iv) return <span className="text-faint">—</span>;
+  const title = t.hv252 ? `IV ${(t.iv * 100).toFixed(0)}% vs one-year realised ${(t.hv252 * 100).toFixed(0)}%` : `IV ${(t.iv * 100).toFixed(0)}%`;
+  if (t.kind !== "EQUITY" || !t.hv252 || !cutoffs) {
+    return (
+      <span className="tnum text-dim" title={title}>
+        {(t.iv * 100).toFixed(0)}%
+      </span>
+    );
+  }
+  const b = IV_BUCKETS[ivBucket(t.hv252, t.iv, cutoffs)];
+  return (
+    <span title={`${title} — ${b.label.toLowerCase()} vs today's market`}>
+      <Tag tone={b.tone === "dim" ? "neutral" : b.tone}>{b.short.replace("IV ", "")}</Tag>
+    </span>
   );
 }

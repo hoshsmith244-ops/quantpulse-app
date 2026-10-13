@@ -162,6 +162,21 @@ versus its one-year history lost 8–11% a month** in both periods.
 Quintiles of IV / IV a month ago predict nothing about the next month's stock
 return: Q1−Q5 +0.05% (t 0.2) train, +0.30% (t 0.8) test (§4).
 
+## 5. Calibration against real chains (`chain-calibrate.mts`)
+
+98 real at-the-money single-stock straddles from the same weeks (median 30
+days to expiry):
+
+- **Pricing holds.** Real straddle mid / model price at the snapshot IV: median
+  0.999. Contract IV / snapshot IV: 0.995. The P&L above is priced correctly.
+- **Spreads are wider than assumed.** Median quoted ATM spread 10.9% of mid on
+  calls and 12.3% on puts (75th percentile 18.7%), against the 8% the analysis
+  charged. Every after-cost single-stock figure above is therefore, if
+  anything, optimistic -- which strengthens the "no edge after costs" result.
+- ETF quotes in this source are unreliable (a quarter had a zero bid on one
+  leg, putting median put spreads above 100% of mid), so no ETF spread figure
+  is used anywhere.
+
 ## What this means for the app
 
 - None of the five strategies, in any tested form, gives an options edge after

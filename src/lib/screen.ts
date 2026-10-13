@@ -1,5 +1,6 @@
 import type { FactorId } from "./alpha";
 import { edgeOf } from "./edge";
+import type { IvCutoffs } from "./options";
 
 /**
  * The screener dataset and the filters over it.
@@ -41,6 +42,10 @@ export type ScreenTicker = {
   avgVolume: number | null;
   /** average daily traded value in dollars */
   dollarVolume: number | null;
+  /** 30-day at-the-money implied vol at build time. Absent on older datasets. */
+  iv?: number | null;
+  /** One-year realised vol, the other half of the IV rich/cheap ratio. */
+  hv252?: number | null;
   /** annualised standard deviation of daily returns, percent */
   volatility: number | null;
   /** percent below the 52-week high */
@@ -100,6 +105,8 @@ export type ScreenData = {
   neighbourShift: number;
   universe: number;
   pairs: number;
+  /** Cross-sectional IV rich/cheap breakpoints for the build day. */
+  ivCutoffs?: IvCutoffs | null;
   counts: Partial<Record<VerdictLevel, number>>;
   failed: string[];
   tickers: Record<string, ScreenTicker>;

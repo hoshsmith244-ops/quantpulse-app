@@ -1,7 +1,8 @@
 name: Rebuild screener
 
-# Regenerates public/screen.json after the US close and commits it, which in
-# turn triggers a Vercel deploy.
+# Regenerates public/screen.json and public/iv-cutoffs.json after the US close
+# and commits them, which in turn triggers a Vercel deploy. The cutoffs are the
+# day's cross-sectional IV rankings behind the terminal's rich/cheap badge.
 #
 # TIMING IS DELIBERATELY LOOSE. GitHub's scheduled runs are routinely delayed
 # by several minutes and occasionally much longer, which would be fatal for the
@@ -29,7 +30,8 @@ concurrency:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
-    # The scan makes ~550 upstream requests; well under this, but a hung
+    # The scan makes ~1,100 upstream requests (bars, fundamentals, and two
+    # option-chain calls per ticker for its IV); about 4 minutes, but a hung
     # provider should not burn an hour of the runner.
     timeout-minutes: 20
 
@@ -65,18 +67,22 @@ jobs:
             if (significant < 50) problems.push('only ' + significant + ' significant pairs — upstream probably failed');
             if (problems.length) { console.error('REFUSING TO COMMIT:\n  ' + problems.join('\n  ')); process.exit(1); }
             console.log('ok: ' + d.universe + ' tickers, ' + d.pairs + ' pairs, as of ' + d.asOf);
+            // The IV ranking is additive: the badge says it is unavailable rather
+            // than breaking, so a failed options fetch warns instead of blocking.
+            if (!d.ivCutoffs) console.warn('WARNING: no IV cutoffs this run; the badge keeps the previous ranking');
+            else console.log('iv cutoffs from ' + d.ivCutoffs.n + ' stocks');
           "
 
       - name: Commit if the data changed
         run: |
-          if git diff --quiet -- public/screen.json; then
+          if git diff --quiet -- public/screen.json public/iv-cutoffs.json; then
             echo "No change — the market data is identical to the last build."
             exit 0
           fi
           AS_OF=$(node -e "process.stdout.write(require('./public/screen.json').asOf)")
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/screen.json
+          git add public/screen.json public/iv-cutoffs.json
           git commit -m "Rebuild screener on ${AS_OF} closes
 
           Automated by .github/workflows/rebuild-screen.yml."

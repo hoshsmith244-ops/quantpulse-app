@@ -39,6 +39,7 @@ import {
   type FactorId,
 } from "../src/lib/alpha.ts";
 import { DEFAULT_CASH_RATE_PCT, edgeOf } from "../src/lib/edge.ts";
+import { atmIv, hv252, type ExpiryChain, type IvCutoffs } from "../src/lib/options.ts";
 import { dropInProgressBar } from "../src/lib/bars.ts";
 import type { Bar } from "../src/lib/types.ts";
 
@@ -138,6 +139,13 @@ type Fundamentals = {
    * stock the real spread swallows the edge, so the result is fiction.
    */
   dollarVolume: number | null;
+  /**
+   * 30-day at-the-money implied vol and one-year realised vol. Their ratio,
+   * ranked against the rest of the universe on the same day, is the IV
+   * rich/cheap rule the research validated (scripts/research/README.md).
+   */
+  iv: number | null;
+  hv252: number | null;
   /** annualised standard deviation of daily returns, percent */
   volatility: number | null;
   /** percent below the 52-week high; 0 means sitting at it */
@@ -182,6 +190,44 @@ async function fetchBars(symbol: string) {
     name: res.meta.longName ?? res.meta.shortName ?? symbol,
     kind: res.meta.instrumentType ?? "EQUITY",
   };
+}
+
+/**
+ * 30-day at-the-money implied vol, computed exactly as the terminal does
+ * (src/lib/options.ts), so the nightly cutoffs and the live badge measure the
+ * same thing. Best-effort: two Yahoo calls, null on any failure.
+ */
+async function fetchAtmIv(symbol: string, spot: number): Promise<number | null> {
+  try {
+    const base = await yf.options(symbol, {});
+    const now = Date.now();
+    const days = (d: Date) => (Date.parse(`${d.toISOString().slice(0, 10)}T20:30:00Z`) - now) / 86_400_000;
+    const target = (base.expirationDates as Date[])
+      .filter((d) => days(d) >= 7)
+      .sort((a, b) => Math.abs(days(a) - 30) - Math.abs(days(b) - 30))[0];
+    if (!target) return null;
+    const o = (await yf.options(symbol, { date: target })).options?.[0];
+    if (!o) return null;
+    const q = (c: { strike: number; bid?: number; ask?: number; lastPrice?: number; impliedVolatility?: number; openInterest?: number; volume?: number }) => ({
+      strike: c.strike,
+      bid: c.bid ?? 0,
+      ask: c.ask ?? 0,
+      last: c.lastPrice ?? 0,
+      iv: typeof c.impliedVolatility === "number" ? c.impliedVolatility : null,
+      openInterest: c.openInterest ?? 0,
+      volume: c.volume ?? 0,
+    });
+    const chain: ExpiryChain = {
+      expiration: target.toISOString().slice(0, 10),
+      days: days(target),
+      calls: o.calls.map(q),
+      puts: o.puts.map(q),
+    };
+    const v = atmIv(chain, spot);
+    return v === null ? null : round(v, 4);
+  } catch {
+    return null;
+  }
 }
 
 /** Best-effort. A missing field stays null and the filters treat it as unknown. */
@@ -341,6 +387,7 @@ const worker = async () => {
         : null);
 
     const kind = fund?.kind ?? hist.kind;
+    const iv = kind === "CRYPTOCURRENCY" ? null : await fetchAtmIv(symbol, last.close);
 
     /**
      * Yahoo reports crypto volume already denominated in USD, while equity and
@@ -373,6 +420,8 @@ const worker = async () => {
       shortPctFloat: fund?.shortPctFloat ?? null,
       avgVolume,
       dollarVolume,
+      iv,
+      hv252: hv252(bars),
       volatility: annualisedVol(bars),
       from52wHigh: from52wHigh(bars),
       price: round(last.close, 2),
@@ -500,6 +549,31 @@ const cashRatePct = await yf
   })
   .catch(() => DEFAULT_CASH_RATE_PCT);
 
+/**
+ * Today's cross-section for the IV rich/cheap badge: quintile breakpoints of
+ * log(HV_252 / IV) across single stocks. Ranked against the universe on the
+ * day, never against fixed numbers -- the fixed-cutoff version of this rule
+ * reversed between periods in testing; the cross-sectional one held up.
+ */
+const ivPoints = Object.values(tickers)
+  .filter((t) => t.kind === "EQUITY" && t.iv && t.hv252)
+  .map((t) => Math.log(t.hv252! / t.iv!))
+  .sort((a, b) => a - b);
+const ivCutoffs: IvCutoffs | null =
+  ivPoints.length >= 50
+    ? {
+        // The date the IV was OBSERVED, which is today in New York -- not the
+        // bars' last close, which can lag a day when Yahoo is slow to settle it.
+        asOf: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+        generatedAt: new Date().toISOString(),
+        breaks: [0.2, 0.4, 0.6, 0.8].map((p) => round(ivPoints[Math.floor(ivPoints.length * p)], 4)) as IvCutoffs["breaks"],
+        n: ivPoints.length,
+      }
+    : null;
+if (ivCutoffs) {
+  writeFileSync(resolve(import.meta.dirname, "../public/iv-cutoffs.json"), JSON.stringify(ivCutoffs));
+}
+
 const payload = {
   generatedAt: new Date().toISOString(),
   asOf,
@@ -511,6 +585,7 @@ const payload = {
   neighbourShift: NEIGHBOUR_SHIFT,
   universe: Object.keys(tickers).length,
   pairs: rows.length,
+  ivCutoffs,
   counts,
   failed,
   tickers,
@@ -527,3 +602,4 @@ console.log(
 console.log(`verdicts: ${Object.entries(counts).map(([k, v]) => `${k}=${v}`).join("  ")}`);
 if (failed.length) console.log(`no data: ${failed.join(", ")}`);
 console.log(`wrote ${out} (${size} KB, as of ${asOf})`);
+console.log(ivCutoffs ? `iv cutoffs from ${ivCutoffs.n} stocks: ${ivCutoffs.breaks.join(", ")}` : `iv cutoffs NOT written: only ${ivPoints.length} stocks had IV`);

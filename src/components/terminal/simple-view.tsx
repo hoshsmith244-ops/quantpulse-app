@@ -14,6 +14,7 @@ import * as React from "react";
 
 import { PriceWithTrades } from "@/components/charts/charts";
 import { MarketContextPanel } from "@/components/terminal/market-context";
+import { OptionsPanel } from "@/components/terminal/options-panel";
 import { CostControl } from "@/components/terminal/cost-control";
 import { TodayAction } from "@/components/terminal/today-action";
 import { displayPrice } from "@/components/terminal/price-display";
@@ -214,6 +215,15 @@ export function SimpleView({
         factor={factor.id}
         param={param}
         currentState={signal.state}
+      />
+
+      <OptionsPanel
+        key={history.quote.symbol}
+        symbol={history.quote.symbol}
+        bars={history.bars}
+        result={result}
+        factor={factor}
+        marketOpen={context?.session === "regular"}
       />
 
       <MarketContextPanel context={context} />

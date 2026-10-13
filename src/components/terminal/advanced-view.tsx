@@ -17,6 +17,7 @@ import {
   Tag,
 } from "@/components/ui/terminal";
 import { CostControl } from "@/components/terminal/cost-control";
+import { OptionsPanel } from "@/components/terminal/options-panel";
 import { TodayAction } from "@/components/terminal/today-action";
 import { TuningPanel } from "@/components/terminal/tuning-panel";
 import { getFactor, gradeIC, type AlphaResult } from "@/lib/alpha";
@@ -64,6 +65,17 @@ export function AdvancedView({
           factor={params.factor}
           param={params.param}
           currentState={result.signal.state}
+        />
+      </div>
+
+      <div className="border-b border-line p-3">
+        <OptionsPanel
+          key={symbol}
+          symbol={symbol}
+          bars={bars}
+          result={result}
+          factor={getFactor(params.factor)}
+          marketOpen={context?.session === "regular"}
         />
       </div>
 
