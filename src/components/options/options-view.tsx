@@ -229,7 +229,7 @@ function Overview({ snap, cutoffs, model, factor, result }: { snap: OptionsSnaps
         title={`Options · ${snap.symbol}`}
         right={
           <span className="text-[10px] uppercase tracking-[0.1em] text-dim">
-            quotes ~15 min delayed · {new Date(snap.asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+            quotes ~15 min delayed · fetched {new Date(snap.asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
           </span>
         }
       />

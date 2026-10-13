@@ -4,8 +4,13 @@ import * as React from "react";
 
 import type { IvCutoffs, OptionsSnapshot } from "./options";
 
-/** Yahoo's option quotes run ~15 minutes late; refreshing faster buys nothing. */
-const REFRESH_MS = 5 * 60_000;
+/**
+ * Yahoo's option quotes are already ~15 minutes late, so the app should add as
+ * little as possible on top: one minute, matching the edge cache. Paused while
+ * the tab is hidden -- nobody is reading it -- and refreshed the moment it is
+ * visible again.
+ */
+const REFRESH_MS = 60_000;
 
 export type OptionsState =
   | { status: "loading" }
@@ -45,10 +50,18 @@ export function useOptions(symbol: string): { state: OptionsState; cutoffs: IvCu
       }
     };
     load();
-    const id = setInterval(load, REFRESH_MS);
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, REFRESH_MS);
+    // Coming back to the tab is exactly when a stale chain would mislead.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [symbol]);
 

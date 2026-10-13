@@ -21,8 +21,10 @@ export const maxDuration = 20;
  * 30% of spot, and the next earnings date.
  *
  * Each request costs several Yahoo calls, so it is rate limited more tightly
- * than /api/history and cached at the edge for five minutes. Yahoo's option
- * quotes are ~15 minutes late anyway; refreshing faster buys nothing.
+ * than /api/history and cached at the edge -- but only for a minute. Yahoo's
+ * option quotes are already ~15 minutes late, and for 1-2 day expiries every
+ * extra minute this layer adds is a minute the user did not choose. Stale
+ * copies are served for at most 30 s while a refresh runs.
  */
 export async function GET(request: Request) {
   const cors = corsHeaders(request, METHODS);
@@ -44,7 +46,7 @@ export async function GET(request: Request) {
       status: 200,
       headers: {
         ...cors,
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900",
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30",
       },
     });
   } catch (err) {
